@@ -1,8 +1,8 @@
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from random import randint, gauss, uniform
-from scipy.ndimage import gaussian_filter1d, maximum_filter1d, minimum_filter1d, uniform_filter1d
+from scipy.ndimage import gaussian_filter1d, maximum_filter1d, minimum_filter1d
 from tqdm import tqdm
 import numpy as np
+import multiprocessing
 
 class FeatureEnhancer():
     @staticmethod
@@ -44,37 +44,36 @@ class FeatureEnhancer():
 
         return result / np.max(result)
 
-    @staticmethod
-    def process_spectrum(spectrum, kernel_sizes, use_mcmc=False):
-        num_kernels = len(kernel_sizes)
-
-        if use_mcmc:
-            spectrum = FeatureEnhancer._metropolis_hasting_mcmc(spectrum, steps=randint(5000, 30000))
-
-        smoothened_spectra = np.empty((num_kernels, spectrum.shape[0]))
-        reduced_dynamic_range_spectra = np.empty((num_kernels, spectrum.shape[0]))
-
-        for j, kernel_size in enumerate(kernel_sizes):
-            smoothened = gaussian_filter1d(spectrum, kernel_size)
-            reduced_dynamic_range = FeatureEnhancer._reduced_dynamic_range(smoothened, kernel_size)
-
-            smoothened_spectra[j] = smoothened / (np.max(smoothened) + 10e-10)
-            reduced_dynamic_range_spectra[j] = reduced_dynamic_range / (np.max(reduced_dynamic_range) + 10e-10)
-
-        return np.stack([smoothened_spectra, reduced_dynamic_range_spectra], axis=0)
+    import numpy as np
 
     @staticmethod
-    def enhanced_features(X, use_mcmc=False):
-        kernel_sizes = [i for i in range(128)]
-        num_channels = 2
+    def process_spectrum(spectrum):
+        steps = randint(500, 50000)
 
-        result = np.zeros((X.shape[0], num_channels, len(kernel_sizes), X.shape[1]))
+        spectrum = FeatureEnhancer._metropolis_hasting_mcmc(spectrum, steps=steps)
 
-        with ProcessPoolExecutor() as executor:
-            futures = {executor.submit(FeatureEnhancer.process_spectrum, spectrum, kernel_sizes, use_mcmc): i for i, spectrum in enumerate(X)}
+        return spectrum
 
-            for future in tqdm(as_completed(futures), desc="enhancing data features", total=len(X)):
-                i = futures[future]
-                result[i] = future.result()
+    @staticmethod
+    def _process_spectra(spectra: np.array, order: int):
+        for i in range(len(spectra)):
+            spectra[i] = FeatureEnhancer.process_spectrum(spectra[i])
+        return spectra, order
 
-        return result
+    @staticmethod
+    def process_spectra(spectra: np.array, batch_size=5000):
+        batches = np.array_split(spectra, spectra.shape[0] // batch_size + 1)
+
+        with multiprocessing.Pool() as pool:
+            results = list(tqdm(
+                pool.starmap(FeatureEnhancer._process_spectra, [(batch, i) for i, batch in enumerate(batches)]),
+                total=len(batches)))
+
+        X = []
+        for X_batch, i in results:
+            X.extend(X_batch)
+
+        return np.array(X) 
+
+if __name__ == "__main__":
+    FeatureEnhancer.process_spectra(np.random.poiss (1000, 4096))
