@@ -1,54 +1,69 @@
 import numpy as np
-
-from .FeatureEnhancer import FeatureEnhancer
 from .TrainDataGenerator import TrainDataGenerator
-from scipy.interpolate import interp1d
-from scipy.ndimage import gaussian_filter1d
-from tqdm import tqdm
+from skimage.transform import resize
 
-class DataPreprocessor():
+
+import numpy as np
+
+class DataPreprocessor:
     @staticmethod
-    def get_processed_spectrum(spectrum, peaks, energies, min_energy=0, max_energy=20, energy_margin=1, target_length=TrainDataGenerator.CHANNELS_COUNT):
-        # Calculate channel to energy mapping
-        correction_coefficients = np.polyfit(peaks, energies, 1)
-        energy_range = np.poly1d(correction_coefficients)(np.arange(spectrum.shape[-1]))
-
-        # Fit spectrum within the energy range [min_energy, max_energy]
-        mask = (energy_range >= min_energy) & (energy_range <= max_energy)
-        energy_range_mapped = energy_range[mask]
-        spectrum_mapped = spectrum[mask]
-
-        # Mask edges of spectrum by energy_margin to reduce noise
-        energy_margin_idx = int((energy_margin / (max_energy - min_energy)) * (spectrum_mapped.shape[-1]))
-        spectrum_mapped[: int(energy_margin_idx)] = spectrum_mapped[energy_margin_idx]
-        spectrum_mapped[-int(energy_margin_idx): ] = spectrum_mapped[-energy_margin_idx]
-
-        # Apply gaussian filter over spectrum
-        # spectrum_mapped = gaussian_filter1d()
-
-        # Interpolate to achieve target_length
-        # interpolation_energy_range = np.linspace(energy_range_mapped[0], energy_range_mapped[-1], target_length)
-        # spectrum_interpolated = interp1d(energy_range_mapped, spectrum_mapped, kind='linear', fill_value="extrapolate")(interpolation_energy_range)
-
-        # Normalize spectrum
-        # spectrum_interpolated = spectrum_interpolated / (np.max(spectrum_interpolated) + 10e-10)
-
-        return energy_range_mapped, spectrum_mapped / (np.max(spectrum_mapped) + 10e-10)
+    def processed_spectra(spectra, peaks, energies, min_energy=0, max_energy=20, energy_margin=1, target_length=TrainDataGenerator.CHANNELS_COUNT):
+        """
+        Process a spectra of shape (X, Y, C), transforming the last dimension (C).
         
+        Parameters:
+            spectra (np.ndarray): Input spectra of shape (X, Y, C)
+            peaks (np.ndarray): Channel positions of known energy peaks
+            energies (np.ndarray): Corresponding energy values for known peaks
+            min_energy (float): Minimum energy range to consider
+            max_energy (float): Maximum energy range to consider
+            energy_margin (float): Margin at the spectra edges to reduce noise
 
+        Returns:
+            new_energy_range (np.ndarray): New energy range of shape (C,)
+            processed_spectra (np.ndarray): Processed spectra of shape (X, Y, C)
+        """
+        X, Y, C = spectra.shape
+
+        # Compute channel-to-energy mapping
+        correction_coefficients = np.polyfit(peaks, energies, 1)
+        evaluate_polynomial = np.poly1d(correction_coefficients)
+        energy_range = evaluate_polynomial(np.arange(C))
+
+        # Create a mask for valid energy values
+        mask = (energy_range >= min_energy) & (energy_range <= max_energy)
+        
+        # Apply mask across all (X, Y)
+        energy_range = energy_range[mask]
+        spectra = spectra[:, :, mask]
+
+        # Compute margin index based on energy range
+        energy_margin_idx = int((energy_margin / (max_energy - min_energy)) * spectra.shape[-1])
+        
+        # Apply edge masking (reduce noise)
+        spectra[:, :, :energy_margin_idx] = 0
+        spectra[:, :, -energy_margin_idx:] = 0
+
+        # Padding along last axis (C) to match [min_energy, max_energy] range 
+        step_size = (energy_range[1] - energy_range[0])
+        left_pad_width = max(0, int((energy_range[0] - min_energy) / step_size))
+        right_pad_width = max(0, int((max_energy - energy_range[-1]) / step_size))
+
+        energy_range = np.pad(energy_range, (left_pad_width, right_pad_width), mode='linear_ramp')
+        spectra = np.pad(spectra, ((0, 0), (0, 0), (left_pad_width, right_pad_width)), mode='constant', constant_values=0)
+
+        # Resize to target length
+        spectra = resize(spectra, (spectra.shape[0], spectra.shape[1], target_length), anti_aliasing=True if target_length < spectra.shape[-1] else False)
+        energy_range = np.linspace(energy_range[0], energy_range[-1], target_length)
+
+        # Normalize spectra per (X, Y) individually
+        min_vals = np.min(spectra, axis=-1, keepdims=True)
+        max_vals = np.max(spectra, axis=-1, keepdims=True)
+        spectra = (spectra - min_vals) / (max_vals + min_vals + 1e-10)
+
+        return  energy_range, spectra
 
     @staticmethod
-    def process(e_xy, peaks, energies, min_energy=0, max_energy=20, energy_margin=1, target_length=TrainDataGenerator.CHANNELS_COUNT, enhance=True):
-        result = np.zeros((*e_xy.shape[:-1], target_length))
-        energy_range = None
-        for i in tqdm(range(e_xy.shape[0]), desc="processing data row"):
-            for j in range(e_xy.shape[1]):
-                energy_range, result[i, j] = DataPreprocessor.get_processed_spectrum(e_xy[i, j], peaks, energies, min_energy, max_energy, energy_margin, target_length)
-
-        if enhance:
-            previous_shape = result.shape
-            result = FeatureEnhancer.enhanced_features(result.reshape(-1, target_length))
-            new_shape = result.shape
-            result = result.reshape((*previous_shape[:-1], *new_shape[1:]))
-
-        return energy_range, result
+    def processed_spectrum(spectrum, peaks, energies, min_energy=0, max_energy=20, energy_margin=1):
+        energy_range, spectra = DataPreprocessor.processed_spectra(spectrum.reshape(1, 1, spectrum.shape[-1]), peaks, energies, min_energy, max_energy, energy_margin)
+        return energy_range, spectra.reshape(-1)
