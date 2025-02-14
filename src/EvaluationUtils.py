@@ -10,68 +10,96 @@ from .FeatureEnhancer import FeatureEnhancer
 from .Elements import Elements
 
 
+import time
+import logging
+import numpy as np
+import torch
+import copy
+
 class EvaluationUtils:
     @staticmethod
-    def train(model, train_loader, valid_loader, optimizer, criterion, epochs=3, mode="supervised"):
+    def train(model, train_loader, valid_loader, optimizer, criterion, epochs=3, mode="supervised", patience=5):
         best_loss = np.inf
         best_weights = None
         train_history = []
         valid_history = []
+        epochs_without_improvement = 0
 
+        # Setup logging
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+        
         for epoch in range(epochs):
+            start_time = time.time()
             model.train()
-            print(f"Epoch {epoch + 1}/{epochs}")
+            logging.info(f"Epoch {epoch + 1}/{epochs} started.")
+
             total_train_loss = 0.0
             batch_count = 0
-
             for X_batch, y_batch in train_loader:
                 optimizer.zero_grad()
-                
+
                 if mode == "autoencoder":
-                    y_pred = model(X_batch)
-                    loss = criterion(y_pred, X_batch)
+                    x_pred = model(X_batch)
+                    loss = criterion(x_pred, X_batch)
                 elif mode == "supervised":
                     y_pred = model(X_batch)
                     loss = criterion(y_pred, y_batch)
+                elif mode == "constrained_autoencoder":
+                    X_pred, y_pred, z = model(X_batch)
+                    loss, x_loss, y_loss = criterion(y_pred, X_pred, y_batch, X_batch, alpha=0.5)
                 else:
                     raise ValueError(f"Invalid mode: {mode}")
-                
+
                 loss.backward()
                 optimizer.step()
 
                 batch_count += 1
                 total_train_loss += loss.item()
                 if batch_count % 100 == 0:
-                    print(f"Batch {batch_count}, Loss: {loss.item():.4f}")
+                    logging.info(f"Batch {batch_count}, Loss: {loss.item():.4f}")
 
             avg_train_loss = total_train_loss / batch_count
             train_history.append(avg_train_loss)
-            print(f"Train Epoch Average Loss: {avg_train_loss:.4f}")
+            logging.info(f"Train Epoch Average Loss: {avg_train_loss:.4f}")
 
-            # Validation phase
             model.eval()
             valid_loss = 0.0
             with torch.no_grad():
                 for X_batch, y_batch in valid_loader:
                     if mode == "autoencoder":
-                        y_pred = model(X_batch)
-                        valid_loss += criterion(y_pred, X_batch).item()
+                        x_pred = model(X_batch)
+                        valid_loss += criterion(x_pred, X_batch).item()
                     elif mode == "supervised":
                         y_pred = model(X_batch)
                         valid_loss += criterion(y_pred, y_batch).item()
+                    elif mode == "constrained_autoencoder":
+                        X_pred, y_pred, z = model(X_batch)
+                        loss, x_loss, y_loss = criterion(y_pred, X_pred, y_batch, X_batch, alpha=0.5)
+                        valid_loss += loss.item()
                     else:
                         raise ValueError(f"Invalid mode: {mode}")
 
             avg_valid_loss = valid_loss / len(valid_loader)
             valid_history.append(avg_valid_loss)
-            print(f"Validation Loss: {avg_valid_loss:.4f}")
+            logging.info(f"Validation Loss: {avg_valid_loss:.4f}")
 
             if avg_valid_loss < best_loss:
                 best_loss = avg_valid_loss
                 best_weights = copy.deepcopy(model.state_dict())
-                print("New best model saved.")
+                logging.info("New best model saved.")
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= patience:
+                logging.info(f"Early stopping triggered after {epoch + 1} epochs.")
+                break
+
+            epoch_duration = time.time() - start_time
+            logging.info(f"Epoch {epoch + 1} finished in {epoch_duration:.2f} seconds.\n")
 
         return train_history, valid_history, best_loss, best_weights
+
 
     @staticmethod
     def create_dataloader(X, y, device, batch_size=16, shuffle=True):

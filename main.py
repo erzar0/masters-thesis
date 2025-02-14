@@ -1,7 +1,7 @@
 import torch
 from src.TrainDataGenerator import TrainDataGenerator
 from src.FeatureEnhancer import FeatureEnhancer 
-from src.Evaluation import Evaluation
+from src.EvaluationUtils import Evaluation
 from sklearn.model_selection import train_test_split
 
 X, y = TrainDataGenerator.generate_artificial_data(samples=10, max_elements_per_sample=2, use_max=True, mu_max_err=0.0, mu_max_err_global=0.0, sigma_max_err=0.0, use_percentages=False, cache_element_samples=True)
