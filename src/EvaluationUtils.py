@@ -1,31 +1,35 @@
+from .Elements import Elements
+from .FeatureEnhancer import FeatureEnhancer
+from .TrainDataGenerator import TrainDataGenerator
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
+from torch.utils.data import DataLoader, TensorDataset
 import copy
+import logging
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-from sklearn.metrics import roc_curve, auc
-from torch.utils.data import DataLoader, TensorDataset
-
-from .TrainDataGenerator import TrainDataGenerator
-from .FeatureEnhancer import FeatureEnhancer
-from .Elements import Elements
-
-
 import time
-import logging
-import numpy as np
 import torch
-import copy
 
 class EvaluationUtils:
+
     @staticmethod
-    def train(model, train_loader, valid_loader, optimizer, criterion, epochs=3, mode="supervised", patience=5):
+    def train(model, train_loader, valid_loader, optimizer, criterion, epochs=3, mode="supervised", patience=5, threshold=0.5):
+        def _print_bar(value, label, width=25):
+            bar = '=' * int(value * width)  
+            return f"{label:{" "}<15}: [{bar:<{width}}] {value:.4f}"
+
         best_loss = np.inf
         best_weights = None
         train_history = []
         valid_history = []
         epochs_without_improvement = 0
 
-        # Setup logging
+        # Lists to store metrics
+        f1_scores = []
+        accuracies = []
+        recalls = []
+        precisions = []
+
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
         
         for epoch in range(epochs):
@@ -46,7 +50,7 @@ class EvaluationUtils:
                     loss = criterion(y_pred, y_batch)
                 elif mode == "constrained_autoencoder":
                     X_pred, y_pred, z = model(X_batch)
-                    loss, x_loss, y_loss = criterion(y_pred, X_pred, y_batch, X_batch, alpha=0.5)
+                    loss, x_loss, y_loss = criterion(y_pred, X_pred, y_batch, X_batch)
                 else:
                     raise ValueError(f"Invalid mode: {mode}")
 
@@ -55,8 +59,8 @@ class EvaluationUtils:
 
                 batch_count += 1
                 total_train_loss += loss.item()
-                if batch_count % 100 == 0:
-                    logging.info(f"Batch {batch_count}, Loss: {loss.item():.4f}")
+                # if batch_count % 100 == 0:
+                #     logging.info(f"Batch {batch_count}, Loss: {loss.item():.4f}")
 
             avg_train_loss = total_train_loss / batch_count
             train_history.append(avg_train_loss)
@@ -64,6 +68,8 @@ class EvaluationUtils:
 
             model.eval()
             valid_loss = 0.0
+            all_preds = []
+            all_labels = []
             with torch.no_grad():
                 for X_batch, y_batch in valid_loader:
                     if mode == "autoencoder":
@@ -72,16 +78,44 @@ class EvaluationUtils:
                     elif mode == "supervised":
                         y_pred = model(X_batch)
                         valid_loss += criterion(y_pred, y_batch).item()
+
+                        # Apply threshold to get binary predictions
+                        y_pred_binary = y_pred.round().cpu().numpy()
+                        all_preds.extend(y_pred_binary)
+                        all_labels.extend(y_batch.cpu().numpy())
                     elif mode == "constrained_autoencoder":
                         X_pred, y_pred, z = model(X_batch)
-                        loss, x_loss, y_loss = criterion(y_pred, X_pred, y_batch, X_batch, alpha=0.5)
+                        loss, x_loss, y_loss = criterion(y_pred, X_pred, y_batch, X_batch)
                         valid_loss += loss.item()
+
+                        # Apply threshold to get binary predictions
+                        y_pred_binary = y_pred.round().cpu().numpy()
+                        all_preds.extend(y_pred_binary)
+                        all_labels.extend(y_batch.cpu().numpy())
                     else:
                         raise ValueError(f"Invalid mode: {mode}")
 
             avg_valid_loss = valid_loss / len(valid_loader)
             valid_history.append(avg_valid_loss)
             logging.info(f"Validation Loss: {avg_valid_loss:.4f}")
+
+            # Calculate metrics for multi-label classification
+            if mode in ["supervised", "constrained_autoencoder"]:
+                accuracy = accuracy_score(all_labels, all_preds)
+                precision = precision_score(all_labels, all_preds, average='samples')
+                recall = recall_score(all_labels, all_preds, average='samples')
+                f1 = f1_score(all_labels, all_preds, average='samples')
+
+                accuracies.append(accuracy)
+                precisions.append(precision)
+                recalls.append(recall)
+                f1_scores.append(f1)
+
+
+                logging.info("\n" + _print_bar(accuracy, "Accuracy") + "\n" +
+                        _print_bar(precision, "Precision") + "\n" +
+                        _print_bar(recall, "Recall") + "\n" +
+                        _print_bar(f1, "F1 Score"))
 
             if avg_valid_loss < best_loss:
                 best_loss = avg_valid_loss
@@ -98,7 +132,7 @@ class EvaluationUtils:
             epoch_duration = time.time() - start_time
             logging.info(f"Epoch {epoch + 1} finished in {epoch_duration:.2f} seconds.\n")
 
-        return train_history, valid_history, best_loss, best_weights
+        return train_history, valid_history, best_loss, best_weights, f1_scores, accuracies, recalls, precisions
 
 
     @staticmethod
