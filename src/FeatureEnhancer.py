@@ -33,8 +33,10 @@ class FeatureEnhancer():
         for i in range(steps):
             x_proposed = int(gauss(x_prev, sigma)) % channel_count
             probability_proposed = spectrum[x_proposed]
+            if probability_proposed <= 0:
+                continue
 
-            accept_criterion = probability_proposed / probability_prev
+            accept_criterion = probability_proposed / (probability_prev + 1e-5)
             accept_threshold = uniform(0, 1)
             if accept_criterion > accept_threshold:
                 x_prev = x_proposed
@@ -48,7 +50,7 @@ class FeatureEnhancer():
 
     @staticmethod
     def process_spectrum(spectrum):
-        steps = randint(500, 50000)
+        steps = randint(500, 100000)
 
         spectrum = FeatureEnhancer._metropolis_hasting_mcmc(spectrum, steps=steps)
 

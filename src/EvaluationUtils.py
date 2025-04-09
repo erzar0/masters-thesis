@@ -1,6 +1,6 @@
 from .Elements import Elements
 from .FeatureEnhancer import FeatureEnhancer
-from .TrainDataGenerator import TrainDataGenerator
+from .ArtifficialTrainDataGenerator import ArtifficialTrainDataGenerator
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
 from torch.utils.data import DataLoader, TensorDataset
 import copy
@@ -144,7 +144,7 @@ class EvaluationUtils:
 
     @staticmethod
     def create_test_dataloader(max_elements_per_sample, device="cpu", samples=10000, use_max=False):
-        X, y = TrainDataGenerator.generate_artificial_data(
+        X, y = ArtifficialTrainDataGenerator.generate_artificial_data(
             samples=samples,
             max_elements_per_sample=max_elements_per_sample,
             use_max=use_max,
