@@ -173,28 +173,17 @@ class EvaluationUtils:
         all_real = torch.cat(all_real).numpy()
         all_pred = torch.cat(all_pred).numpy()
         n_classes = all_real.shape[1]
-        aucs = []
-
-        plt.figure(figsize=(10, 8))
-        plt.plot([0, 1], [0, 1], 'k--', label='Random Guessing')
+        aucs = {}
+        rocs = {}
 
         for i in range(n_classes):
+            symbol = Elements.NUM2SYMBOL[i]
             fpr, tpr, _ = roc_curve(all_real[:, i], all_pred[:, i])
             roc_auc = auc(fpr, tpr)
-            aucs.append(roc_auc)
-            plt.plot(fpr, tpr, label=f"{Elements.NUM2SYMBOL[i].capitalize()} (AUC = {roc_auc:.2f})")
+            aucs[symbol] = roc_auc
+            rocs[symbol] = (fpr, tpr)
 
-        plt.xlabel("False Positive Rate")
-        plt.ylabel("True Positive Rate")
-        plt.title("ROC Curves by Element")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-        plt.tight_layout()
-        plt.savefig("roc_curves.svg")
-        plt.close()
-
-        avg_auc = np.mean(aucs)
-        print(f"Average AUC: {avg_auc:.4f}")
-        return aucs
+        return aucs, rocs
 
     @staticmethod
     def calculate_accuracy_precision_recall_f1(model, test_loader):
