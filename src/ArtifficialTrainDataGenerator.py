@@ -37,9 +37,9 @@ class ArtifficialTrainDataGenerator:
         if peak_type == "escape":
             mu = element_line["mu"] - Elements.ESCAPE_ENERGY_DIFF + np.random.uniform(-mu_max_err, mu_max_err) + mu_err_global
             intensity = element_line["intensity"] * Elements.ESCAPE_ENERGY_INTENSITY_RATIO
-        elif peak_type == "cu":
-            mu = Elements.CU_THRESHOLD_ENERGY + np.random.uniform(-mu_max_err, mu_max_err) + mu_err_global
-            intensity = element_line["intensity"] * Elements.ESCAPE_ENERGY_INTENSITY_RATIO
+        # elif peak_type == "cu":
+        #     mu = Elements.CU_THRESHOLD_ENERGY + np.random.uniform(-mu_max_err, mu_max_err) + mu_err_global
+        #     intensity = element_line["intensity"] * Elements.ESCAPE_ENERGY_INTENSITY_RATIO
         else:
             raise ValueError("Invalid peak type")
 
@@ -76,15 +76,15 @@ class ArtifficialTrainDataGenerator:
                                                               , sigma_max_err   = sigma_max_err
                                                               , scale_sigma     = scale_sigma
                                                               , peak_type       = "escape")
-            if mu > Elements.CU_THRESHOLD_ENERGY:
-                element_sample = ArtifficialTrainDataGenerator._add_peak(energy_range      = energy_range
-                                                              , element_line    = element_line
-                                                              , element_sample  = element_sample
-                                                              , mu_err_global   = mu_err_global
-                                                              , mu_max_err      = mu_max_err
-                                                              , sigma_max_err   = sigma_max_err
-                                                              , scale_sigma     = scale_sigma
-                                                              , peak_type       = "cu")
+            # if mu > Elements.CU_THRESHOLD_ENERGY:
+            #     element_sample = ArtifficialTrainDataGenerator._add_peak(energy_range      = energy_range
+            #                                                   , element_line    = element_line
+            #                                                   , element_sample  = element_sample
+            #                                                   , mu_err_global   = mu_err_global
+            #                                                   , mu_max_err      = mu_max_err
+            #                                                   , sigma_max_err   = sigma_max_err
+            #                                                   , scale_sigma     = scale_sigma
+            #                                                   , peak_type       = "cu")
 
         element_sample /= np.max(element_sample)
 
