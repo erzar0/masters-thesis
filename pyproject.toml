@@ -1,0 +1,20 @@
+[project]
+name = "my_project"
+version = "0.1.0"
+description = ""
+authors = ["Eryk Zarębski"]
+dependencies = [
+    "scikit-image==0.25.2",
+    "scikit-learn==1.6.1",
+    "seaborn==0.13.2",
+    "torch==2.6.0",
+    "graphviz==0.20.3",
+    "torchview==0.2.6",
+    "tqdm==4.67.1",
+    "ipykernel==6.29.5",
+
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
