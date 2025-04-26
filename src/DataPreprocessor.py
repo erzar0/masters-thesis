@@ -4,6 +4,7 @@ from skimage.transform import resize
 import numpy as np
 import inspect
 import warnings
+from tqdm import tqdm
 
 
 class DataPreprocessor:
@@ -205,7 +206,7 @@ class DataPreprocessor:
              curve_fit_kwargs.setdefault('maxfev', 10000)
 
         warnings.warn("Performing pixel-wise extrapolation, which can be slow for large images.", RuntimeWarning)
-        for i in range(X):
+        for i in tqdm(range(X)):
             for j in range(Y):
                 current_spectrum = extrapolated_spectra[i, j, :]
 

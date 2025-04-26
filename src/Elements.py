@@ -36,7 +36,8 @@ class Elements():
 
     @staticmethod
     def calculate_sigma(energy):
-        return np.sqrt((0.08/2.354)**2 + 0.00385 * Elements.FANO * energy)
+        return 0.51
+        # return np.sqrt((0.08/2.354)**2 + 0.00385 * Elements.FANO * energy)
 
     @staticmethod
     def get_parsed_element_lines(element):

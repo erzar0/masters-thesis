@@ -4,6 +4,8 @@ import random
 from .Elements import Elements
 from functools import reduce
 from tqdm import tqdm 
+from scipy.stats import beta
+
 import multiprocessing
 
 class ArtifficialTrainDataGenerator:
@@ -12,6 +14,7 @@ class ArtifficialTrainDataGenerator:
     CACHED_ELEMENT_SAMPLES = {}
     MIN_ENERGY = 0
     MAX_ENERGY = 20
+    WOOD_SPECTRUM = np.load("data/objects/pigment_palette/1_calibrated_spectra.npz", allow_pickle=True)["wood"]
 
     @staticmethod
     def gaussian(x, mu, sigma):
@@ -32,7 +35,7 @@ class ArtifficialTrainDataGenerator:
         return [el if el in Elements.LINES else Elements.NUM2SYMBOL[el] for el in selected_elements]
 
     @staticmethod
-    def _add_peak(energy_range, element_line, element_sample, mu_err_global, mu_max_err, sigma_max_err, scale_sigma, peak_type):
+    def _add_peak(energy_range, element_line, element_sample, mu_err_global, mu_max_err, sigma, peak_type):
         """Add a specific peak (escape or copper) to the element sample."""
         if peak_type == "escape":
             mu = element_line["mu"] - Elements.ESCAPE_ENERGY_DIFF + np.random.uniform(-mu_max_err, mu_max_err) + mu_err_global
@@ -43,15 +46,14 @@ class ArtifficialTrainDataGenerator:
         else:
             raise ValueError("Invalid peak type")
 
-        sigma = Elements.calculate_sigma(mu) * scale_sigma + np.random.uniform(-sigma_max_err, sigma_max_err)
         gaussian = ArtifficialTrainDataGenerator.gaussian(energy_range, mu, sigma)
-        gaussian /= np.max(gaussian)
+        gaussian /= np.max(gaussian) 
         gaussian *= intensity
         element_sample += gaussian
         return element_sample
 
     @staticmethod
-    def _generate_element_sample(energy_range, element, mu_err_global, mu_max_err, sigma_max_err, scale_sigma, cache_element_samples):
+    def _generate_element_sample(energy_range, element, mu_err_global, mu_max_err, sigma, cache_element_samples):
         """Generate a sample for a single element."""
         if cache_element_samples and element in ArtifficialTrainDataGenerator.CACHED_ELEMENT_SAMPLES:
             return ArtifficialTrainDataGenerator.CACHED_ELEMENT_SAMPLES[element].copy()
@@ -59,7 +61,6 @@ class ArtifficialTrainDataGenerator:
         element_sample = np.zeros(ArtifficialTrainDataGenerator.CHANNELS_COUNT)
         for element_line in Elements.get_parsed_element_lines(element):
             mu = element_line["mu"] + np.random.uniform(-mu_max_err, mu_max_err) + mu_err_global
-            sigma = element_line["sigma"] * scale_sigma + np.random.uniform(-sigma_max_err, sigma_max_err)
             intensity = element_line["intensity"]
             gaussian = ArtifficialTrainDataGenerator.gaussian(energy_range, mu, sigma)
             gaussian /= np.max(gaussian)
@@ -73,9 +74,9 @@ class ArtifficialTrainDataGenerator:
                                                               , element_sample  = element_sample
                                                               , mu_err_global   = mu_err_global
                                                               , mu_max_err      = mu_max_err
-                                                              , sigma_max_err   = sigma_max_err
-                                                              , scale_sigma     = scale_sigma
+                                                              , sigma           = sigma
                                                               , peak_type       = "escape")
+            
             # if mu > Elements.CU_THRESHOLD_ENERGY:
             #     element_sample = ArtifficialTrainDataGenerator._add_peak(energy_range      = energy_range
             #                                                   , element_line    = element_line
@@ -94,51 +95,59 @@ class ArtifficialTrainDataGenerator:
         return element_sample
 
     @staticmethod
-    def generate_sample(energy_range, selected_elements, element_percentages, mu_err_global, mu_max_err, sigma_max_err, scale_sigma=1, set_percentages=False, cache_element_samples=False):
+    def generate_sample(energy_range, selected_elements, element_percentages, mu_err_global, mu_max_err, sigma_range, set_percentages=False, cache_element_samples=False):
         """Generate a single sample with specified elements and parameters."""
         sample = np.zeros(ArtifficialTrainDataGenerator.CHANNELS_COUNT)
         target = np.zeros(ArtifficialTrainDataGenerator.TARGET_VECTOR_LENGTH)
 
         for element_percentage, element in zip(element_percentages, selected_elements):
             target[Elements.SYMBOL2NUM[element]] = element_percentage if set_percentages else 1
-            element_sample = ArtifficialTrainDataGenerator._generate_element_sample(energy_range               = energy_range
+            sigma = np.random.uniform(*sigma_range)
+            element_sample = ArtifficialTrainDataGenerator._generate_element_sample(energy_range    = energy_range
                                                                          , element                  = element
                                                                          , mu_err_global            = mu_err_global 
                                                                          , mu_max_err               = mu_max_err
-                                                                         , sigma_max_err            = sigma_max_err
-                                                                         , scale_sigma              = scale_sigma
+                                                                         , sigma                    = sigma
                                                                          , cache_element_samples    = cache_element_samples)
             element_sample *= element_percentage
             sample += element_sample
 
         sample /= np.max(sample)
+
+        percent_wood_spectrum = np.pow(random.random(), 2)
+        sample = (1-percent_wood_spectrum) * sample + percent_wood_spectrum * ArtifficialTrainDataGenerator.WOOD_SPECTRUM 
+        sample /= np.max(sample)
+        sample[ArtifficialTrainDataGenerator.WOOD_SPECTRUM <= 0] = 0
+        target[target < 0.03] = 0
+        target /= np.sum(target)
         return sample, target
 
     @staticmethod
-    def generate_many_samples(samples=10, elements_per_sample=3, mu_max_err=0.0, mu_max_err_global=0.0, sigma_max_err=0.0, scale_sigma=1, batch_size=5000, elements=None, set_percentages=False, cache_element_samples=False):
+    def generate_many_samples(samples=10, mu_max_err=0.0, mu_max_err_global=0.0, sigma_range=(0.2, 0.6), batch_size=5000, elements=None, set_percentages=False, cache_element_samples=False):
         """Generate multiple samples with specified parameters."""
         if samples <= batch_size:
             X = [np.zeros(ArtifficialTrainDataGenerator.CHANNELS_COUNT) for _ in range(samples)]
             y = [np.zeros(ArtifficialTrainDataGenerator.TARGET_VECTOR_LENGTH) for _ in range(samples)]
             energy_range = np.linspace(ArtifficialTrainDataGenerator.MIN_ENERGY, ArtifficialTrainDataGenerator.MAX_ENERGY, ArtifficialTrainDataGenerator.CHANNELS_COUNT)
 
-            for i in range(samples):
-                selected_elements = ArtifficialTrainDataGenerator._sample_elements(elements_per_sample, elements)
+            
+            spectra_counts = beta.rvs(a=4, b=20, size=samples)
+            different_spectra_count = len(Elements.LINES)
+            spectra_counts = np.clip((spectra_counts * different_spectra_count).astype(int) + 1, 1, different_spectra_count).tolist()
+            for i, spectra_count in enumerate(spectra_counts):
+                selected_elements = ArtifficialTrainDataGenerator._sample_elements(spectra_count, elements)
                 element_percentages = ArtifficialTrainDataGenerator._get_random_percentages(len(selected_elements))
                 mu_err_global = np.random.uniform(-mu_max_err_global, mu_max_err_global)
-                exponential = np.exp(-np.linspace(4, 5, ArtifficialTrainDataGenerator.CHANNELS_COUNT))
 
-                sample, target = ArtifficialTrainDataGenerator.generate_sample(energy_range            = energy_range
+                sample, target = ArtifficialTrainDataGenerator.generate_sample(energy_range = energy_range
                                                                     , selected_elements     = selected_elements
                                                                     , element_percentages   = element_percentages
                                                                     , mu_err_global         = mu_err_global
                                                                     , mu_max_err            = mu_max_err
-                                                                    , sigma_max_err         = sigma_max_err
-                                                                    , scale_sigma           = scale_sigma
+                                                                    , sigma_range           = sigma_range
                                                                     , set_percentages       = set_percentages
                                                                     , cache_element_samples = cache_element_samples)
 
-                sample += exponential
                 sample /= np.max(sample)
                 X[i] = sample
                 y[i] = target
@@ -152,11 +161,9 @@ class ArtifficialTrainDataGenerator:
             with multiprocessing.Pool() as pool:
                 results = list(tqdm(
                     pool.starmap(ArtifficialTrainDataGenerator.generate_many_samples, [(s
-                                                                             , elements_per_sample
                                                                              , mu_max_err
                                                                              , mu_max_err_global
-                                                                             , sigma_max_err
-                                                                             , scale_sigma
+                                                                             , sigma_range
                                                                              , batch_size
                                                                              , elements
                                                                              , set_percentages
@@ -173,19 +180,14 @@ class ArtifficialTrainDataGenerator:
     
 
     @staticmethod
-    def generate_artificial_data(samples=10000, batch_size=5000, max_elements_per_sample=1, mu_max_err=0.0, mu_max_err_global=0.0, sigma_max_err=0.0, set_percentages=False, cache_element_samples=False):
-        artificial_data = [
-            ArtifficialTrainDataGenerator.generate_many_samples(samples                = round(samples * (i / sum(range(1, max_elements_per_sample + 1))))
-                                                    , elements_per_sample   = i
-                                                    , mu_max_err            = mu_max_err
-                                                    , mu_max_err_global     = mu_max_err_global
-                                                    , sigma_max_err         = sigma_max_err
-                                                    , batch_size            = batch_size
-                                                    , elements              = None
-                                                    , set_percentages       = set_percentages 
-                                                    , cache_element_samples = cache_element_samples) 
-            for i in range(1, max_elements_per_sample + 1)
-        ]
+    def generate_artificial_data(samples=10000, batch_size=5000, mu_max_err=0.05, mu_max_err_global=0.05, sigma_range=(0.2, 0.7), set_percentages=False, cache_element_samples=False):
+        X, y= ArtifficialTrainDataGenerator.generate_many_samples(samples = samples
+                                                                        , mu_max_err            = mu_max_err
+                                                                        , mu_max_err_global     = mu_max_err_global
+                                                                        , sigma_range           = sigma_range 
+                                                                        , batch_size            = batch_size
+                                                                        , elements              = None
+                                                                        , set_percentages       = set_percentages 
+                                                                        , cache_element_samples = cache_element_samples) 
 
-        X, y = reduce(lambda acc, val: (acc[0] + val[0], acc[1] + val[1]), artificial_data, ([], []))
         return np.array(X), np.array(y)
