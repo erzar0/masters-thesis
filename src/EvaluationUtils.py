@@ -97,8 +97,8 @@ class EvaluationUtils:
                 batch_count += 1
                 total_train_loss += loss.item()
                 # Optional: Log batch loss periodically
-                # if (i + 1) % 100 == 0:
-                #     logging.info(f"  Batch {i + 1}/{len(train_loader)}, Loss: {loss.item():.4f}")
+                if (i + 1) % 10 == 0:
+                    logging.info(f"  Batch {i + 1}/{len(train_loader)}, Loss: {loss.item():.4f}")
 
             avg_train_loss = total_train_loss / batch_count
             train_history.append(avg_train_loss)
@@ -180,6 +180,7 @@ class EvaluationUtils:
             if avg_valid_loss < best_loss:
                 best_loss = avg_valid_loss
                 best_weights = copy.deepcopy(model.state_dict())
+                torch.save(model.state_dict(), f"data/model_weights/tmp")
                 logging.info(f"Validation loss improved to {best_loss:.4f}. Saving model weights.")
                 epochs_without_improvement = 0
             else:

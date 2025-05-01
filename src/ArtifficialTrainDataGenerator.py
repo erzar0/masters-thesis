@@ -118,7 +118,7 @@ class ArtifficialTrainDataGenerator:
         sample = (1-percent_wood_spectrum) * sample + percent_wood_spectrum * ArtifficialTrainDataGenerator.WOOD_SPECTRUM 
         sample /= np.max(sample)
         sample[ArtifficialTrainDataGenerator.WOOD_SPECTRUM <= 0] = 0
-        target[target < 0.03] = 0
+        target[target < 0.1] = 0
         target /= np.sum(target)
         return sample, target
 
@@ -191,3 +191,4 @@ class ArtifficialTrainDataGenerator:
                                                                         , cache_element_samples = cache_element_samples) 
 
         return np.array(X), np.array(y)
+
