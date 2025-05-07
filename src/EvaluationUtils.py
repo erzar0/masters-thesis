@@ -1,7 +1,9 @@
+from .ArtifficialTrainDataGenerator import ArtifficialTrainDataGenerator
 from .Elements import Elements
 from .FeatureEnhancer import FeatureEnhancer
-from .ArtifficialTrainDataGenerator import ArtifficialTrainDataGenerator
+from sklearn import metrics
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc, jaccard_score, hamming_loss
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score # Import regression metrics
 from torch.utils.data import DataLoader, TensorDataset
 import copy
 import logging
@@ -9,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 import torch
-from sklearn import metrics
 
 
 class EvaluationUtils:
@@ -25,28 +26,70 @@ class EvaluationUtils:
             valid_loader: DataLoader for the validation set.
             optimizer: Optimizer for training (e.g., Adam, SGD).
             criterion: Loss function. Note: For 'constrained_autoencoder', this should return
-                       a tuple (total_loss, reconstruction_loss, classification_loss).
+                         a tuple (total_loss, reconstruction_loss, classification_loss).
+                         For 'regression', this should be a regression loss like MSE or MAE.
             epochs (int): Maximum number of epochs to train.
-            mode (str): Training mode. Options: "supervised", "autoencoder", "constrained_autoencoder".
+            mode (str): Training mode. Options: "supervised", "autoencoder", "constrained_autoencoder", "regression".
             patience (int): Number of epochs to wait for improvement before early stopping.
             threshold (float): Threshold for converting probabilities/logits to binary predictions
-                               in supervised and constrained_autoencoder modes.
+                               in supervised and constrained_autoencoder modes. Ignored in 'autoencoder' and 'regression' modes.
 
         Returns:
-            tuple: Contains training history, validation history, best validation loss,
-                   best model weights (state_dict), and histories of evaluation metrics
-                   (F1, Accuracy, Recall, Precision, Jaccard Index, Hamming Loss).
+            dict: A dictionary containing training history, validation history, best validation loss,
+                  best model weights (state_dict), and histories of evaluation metrics.
+                  The structure of the metrics history depends on the mode.
         """
-        
-        # --- Helper Function ---
+
+        # --- Helper Functions ---
         def _print_bar(value, label, width=25):
             """Formats a value and label into a progress bar string."""
             # Ensure value is within [0, 1] for bar representation, clamp otherwise
-            bar_value = max(0.0, min(1.0, value)) 
+            bar_value = max(0.0, min(1.0, value))
             bar = '=' * int(bar_value * width)
-            # Handle cases where value might be > 1 (like Hamming Loss can be) or < 0 conceptually
-            display_value = f"{value:.4f}" 
+            # Handle cases where value might be outside [0, 1] conceptually
+            display_value = f"{value:.4f}"
             return f"{label:{" "}<15}: [{bar:<{width}}] {display_value}"
+
+        def _calculate_classification_metrics(all_labels_np, all_preds_np, threshold):
+            """Calculates and returns classification metrics in a dictionary."""
+            if not all_labels_np.size or not all_preds_np.size:
+                 logging.warning("No labels or predictions collected for metric calculation.")
+                 return {
+                     'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0,
+                     'f1_score': 0.0, 'jaccard_index': 0.0, 'hamming_loss': 1.0
+                 }
+
+            # Ensure predictions are binary based on the threshold
+            all_preds_binary = (all_preds_np >= threshold).astype(int)
+
+            accuracy = accuracy_score(all_labels_np, all_preds_binary)
+            precision = precision_score(all_labels_np, all_preds_binary, average='samples', zero_division=0)
+            recall = recall_score(all_labels_np, all_preds_binary, average='samples', zero_division=0)
+            f1 = f1_score(all_labels_np, all_preds_binary, average='samples', zero_division=0)
+            jaccard = jaccard_score(all_labels_np, all_preds_binary, average='samples', zero_division=0)
+            hamming = hamming_loss(all_labels_np, all_preds_binary)
+
+            return {
+                'accuracy': accuracy,
+                'precision': precision,
+                'recall': recall,
+                'f1_score': f1,
+                'jaccard_index': jaccard,
+                'hamming_loss': hamming
+            }
+
+        def _calculate_regression_metrics(all_labels_np, all_preds_np):
+            """Calculates and returns regression metrics in a dictionary."""
+            if not all_labels_np.size or not all_preds_np.size:
+                 logging.warning("No labels or predictions collected for metric calculation.")
+                 return {'mse': np.inf, 'mae': np.inf, 'r2_score': -np.inf}
+
+            mse = mean_squared_error(all_labels_np, all_preds_np)
+            mae = mean_absolute_error(all_labels_np, all_preds_np)
+            r2 = r2_score(all_labels_np, all_preds_np)
+
+            return {'mse': mse, 'mae': mae, 'r2_score': r2}
+
 
         best_loss = np.inf
         best_weights = None
@@ -54,16 +97,30 @@ class EvaluationUtils:
         valid_history = []
         epochs_without_improvement = 0
 
-        f1_scores = []
-        accuracies = []
-        recalls = []
-        precisions = []
-        jaccard_indices = [] 
-        hamming_losses = []
+        # Metric histories (initialized based on mode)
+        metric_histories = {}
+        if mode in ["supervised", "constrained_autoencoder"]:
+            metric_histories = {
+                'accuracy': [],
+                'precision': [],
+                'recall': [],
+                'f1_score': [],
+                'jaccard_index': [],
+                'hamming_loss': []
+            }
+        elif mode == "regression":
+             metric_histories = {
+                'mse': [],
+                'mae': [],
+                'r2_score': []
+             }
+
 
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        logging.info(f"Starting training process (mode: {mode}, epochs: {epochs}, patience: {patience}, threshold: {threshold})")
-        
+        logging.info(f"Starting training process (mode: {mode}, epochs: {epochs}, patience: {patience})")
+        if mode in ["supervised", "constrained_autoencoder"]:
+             logging.info(f"Threshold for binary prediction: {threshold}")
+
         for epoch in range(epochs):
             start_time = time.time()
             model.train()
@@ -74,22 +131,26 @@ class EvaluationUtils:
             for i, (X_batch, y_batch) in enumerate(train_loader):
                 optimizer.zero_grad()
 
+                loss = torch.tensor(0.0) # Initialize loss for the batch
+
                 if mode == "autoencoder":
                     x_pred = model(X_batch)
                     loss = criterion(x_pred, X_batch)
                 elif mode == "supervised":
                     y_pred = model(X_batch)
                     loss = criterion(y_pred, y_batch)
+                elif mode == "regression":
+                    y_pred = model(X_batch)
+                    loss = criterion(y_pred, y_batch)
                 elif mode == "constrained_autoencoder":
-                    X_pred, y_pred, z = model(X_batch) 
+                    X_pred, y_pred, z = model(X_batch)
                     loss_tuple = criterion(y_pred, X_pred, y_batch, X_batch)
-                    if isinstance(loss_tuple, tuple): 
-                       loss, x_loss, y_loss = loss_tuple
+                    if isinstance(loss_tuple, tuple):
+                        loss, x_loss, y_loss = loss_tuple
                     else:
-                       loss = loss_tuple 
-                       x_loss, y_loss = torch.tensor(0.0), torch.tensor(0.0)
+                        loss = loss_tuple # Assuming total loss is returned if not a tuple
                 else:
-                    raise ValueError(f"Invalid mode: {mode}. Choose 'supervised', 'autoencoder', or 'constrained_autoencoder'.")
+                    raise ValueError(f"Invalid mode: {mode}. Choose 'supervised', 'autoencoder', 'constrained_autoencoder', or 'regression'.")
 
                 loss.backward()
                 optimizer.step()
@@ -98,11 +159,11 @@ class EvaluationUtils:
                 total_train_loss += loss.item()
                 # Optional: Log batch loss periodically
                 if (i + 1) % 10 == 0:
-                    logging.info(f"  Batch {i + 1}/{len(train_loader)}, Loss: {loss.item():.4f}")
+                    logging.info(f"  Batch {i + 1}/{len(train_loader)}, Loss: {loss.item():.7f}")
 
             avg_train_loss = total_train_loss / batch_count
             train_history.append(avg_train_loss)
-            logging.info(f"Epoch {epoch + 1} Training Avg Loss: {avg_train_loss:.4f}")
+            logging.info(f"Epoch {epoch + 1} Training Avg Loss: {avg_train_loss:.7f}")
 
             model.eval()
             total_valid_loss = 0.0
@@ -115,72 +176,78 @@ class EvaluationUtils:
                         x_pred = model(X_batch)
                         loss = criterion(x_pred, X_batch)
                         total_valid_loss += loss.item()
-                    
-                    elif mode in ["supervised", "constrained_autoencoder"]:
-                        if mode == "supervised":
-                           y_pred = model(X_batch)
-                           loss = criterion(y_pred, y_batch)
-                        else: # constrained_autoencoder
-                           X_pred, y_pred, z = model(X_batch)
-                           loss_tuple = criterion(y_pred, X_pred, y_batch, X_batch)
-                           if isinstance(loss_tuple, tuple):
-                               loss, _, _ = loss_tuple # Only need total loss for validation loss tracking
-                           else:
-                               loss = loss_tuple
 
-                        total_valid_loss += loss.item()
+                    elif mode in ["supervised", "regression", "constrained_autoencoder"]:
+                         if mode == "supervised":
+                             y_pred = model(X_batch)
+                             loss = criterion(y_pred, y_batch)
+                         elif mode == "regression":
+                             y_pred = model(X_batch)
+                             loss = criterion(y_pred, y_batch)
+                         elif mode == "constrained_autoencoder":
+                             X_pred, y_pred, z = model(X_batch)
+                             loss_tuple = criterion(y_pred, X_pred, y_batch, X_batch)
+                             if isinstance(loss_tuple, tuple):
+                                 loss, _, _ = loss_tuple # Only need total loss for validation loss tracking
+                             else:
+                                 loss = loss_tuple # Assuming total loss is returned
 
-                        y_pred_np = y_pred.cpu().numpy()
-                        y_batch_np = y_batch.cpu().numpy()
+                         total_valid_loss += loss.item()
 
-                        y_pred_binary = (y_pred_np >= threshold).astype(int) 
-                        
-                        all_preds.extend(y_pred_binary)
-                        all_labels.extend(y_batch_np)
-                    
+                         # Collect predictions and labels for metrics
+                         all_preds.extend(y_pred.cpu().numpy())
+                         all_labels.extend(y_batch.cpu().numpy())
+
                     else:
-                        raise ValueError(f"Invalid mode during validation: {mode}")
+                         raise ValueError(f"Invalid mode during validation: {mode}")
 
             avg_valid_loss = total_valid_loss / len(valid_loader)
             valid_history.append(avg_valid_loss)
-            logging.info(f"Epoch {epoch + 1} Validation Avg Loss: {avg_valid_loss:.4f}")
+            logging.info(f"Epoch {epoch + 1} Validation Avg Loss: {avg_valid_loss:.7f}")
+
+            # Calculate and log metrics based on mode
+            all_labels_np = np.array(all_labels)
+            all_preds_np = np.array(all_preds)
 
             if mode in ["supervised", "constrained_autoencoder"]:
-                if not all_labels or not all_preds:
-                   logging.warning("No labels or predictions collected for metric calculation in validation.")
-                   accuracy, precision, recall, f1, jaccard, hamming = 0.0, 0.0, 0.0, 0.0, 0.0, 1.0
-                else:
-                   all_labels_np = np.array(all_labels)
-                   all_preds_np = np.array(all_preds)
+                 classification_metrics = _calculate_classification_metrics(all_labels_np, all_preds_np, threshold)
+                 for metric_name, metric_value in classification_metrics.items():
+                     metric_histories[metric_name].append(metric_value)
 
-                   accuracy = accuracy_score(all_labels_np, all_preds_np)
-                   precision = precision_score(all_labels_np, all_preds_np, average='samples', zero_division=0)
-                   recall = recall_score(all_labels_np, all_preds_np, average='samples', zero_division=0)
-                   f1 = f1_score(all_labels_np, all_preds_np, average='samples', zero_division=0)
-                   jaccard = jaccard_score(all_labels_np, all_preds_np, average='samples', zero_division=0)
-                   hamming = hamming_loss(all_labels_np, all_preds_np)
-
-                accuracies.append(accuracy)
-                precisions.append(precision)
-                recalls.append(recall)
-                f1_scores.append(f1)
-                jaccard_indices.append(jaccard)
-                hamming_losses.append(hamming)
-
-                logging.info("Validation Metrics:\n" +
-                             _print_bar(accuracy, "Accuracy") + "\n" +
-                             _print_bar(precision, "Precision (s)") + "\n" + 
-                             _print_bar(recall, "Recall (s)") + "\n" +
-                             _print_bar(f1, "F1 Score (s)") + "\n" +
-                             _print_bar(jaccard, "Jaccard Idx (s)") + "\n" +
-                             _print_bar(1.0 - hamming, "1 - Hamm Loss") 
+                 logging.info("Validation Metrics:\n" +
+                              _print_bar(classification_metrics['accuracy'], "Accuracy") + "\n" +
+                              _print_bar(classification_metrics['precision'], "Precision (s)") + "\n" +
+                              _print_bar(classification_metrics['recall'], "Recall (s)") + "\n" +
+                              _print_bar(classification_metrics['f1_score'], "F1 Score (s)") + "\n" +
+                              _print_bar(classification_metrics['jaccard_index'], "Jaccard Idx (s)") + "\n" +
+                              _print_bar(1.0 - classification_metrics['hamming_loss'], "1 - Hamm Loss") # Display 1 - Hamming Loss for easier interpretation
                             )
+
+            elif mode == "regression":
+                 regression_metrics = _calculate_regression_metrics(all_labels_np, all_preds_np)
+                 for metric_name, metric_value in regression_metrics.items():
+                     metric_histories[metric_name].append(metric_value)
+
+                 logging.info("Validation Metrics:\n" +
+                              f"  MSE: {regression_metrics['mse']:.7f}\n" +
+                              f"  MAE: {regression_metrics['mae']:.7f}\n" +
+                              f"  R2 Score: {regression_metrics['r2_score']:.7f}"
+                             )
 
 
             if avg_valid_loss < best_loss:
                 best_loss = avg_valid_loss
                 best_weights = copy.deepcopy(model.state_dict())
-                torch.save(model.state_dict(), f"data/model_weights/tmp")
+                # Consider saving to a more specific filename or using a temporary file approach
+                # For simplicity, keeping the original logic but be mindful in production
+                try:
+                    # Ensure the data/model_weights directory exists
+                    import os
+                    os.makedirs("data/model_weights", exist_ok=True)
+                    torch.save(model.state_dict(), "data/model_weights/tmp_best_model_weights.pth")
+                except Exception as e:
+                    logging.warning(f"Could not save model weights to data/model_weights/tmp_best_model_weights.pth: {e}")
+
                 logging.info(f"Validation loss improved to {best_loss:.4f}. Saving model weights.")
                 epochs_without_improvement = 0
             else:
@@ -195,13 +262,127 @@ class EvaluationUtils:
             logging.info(f"Epoch {epoch + 1} completed in {epoch_duration:.2f} seconds.\n")
 
         if best_weights is None:
+             # If no improvement was ever seen (e.g., first epoch had issues), return the last state
              best_weights = copy.deepcopy(model.state_dict())
              logging.warning("Training finished without improvement; returning last model state.")
         else:
              logging.info(f"Training finished. Best validation loss: {best_loss:.4f}")
 
+        # Prepare the return dictionary
+        results = {
+            'train_loss_history': train_history,
+            'valid_loss_history': valid_history,
+            'best_valid_loss': best_loss,
+            'best_model_weights': best_weights,
+            'metric_histories': metric_histories # This already contains mode-specific metrics
+        }
 
-        return train_history, valid_history, best_loss, best_weights, f1_scores, accuracies, recalls, precisions, jaccard_indices, hamming_losses
+        return results
+
+
+    @staticmethod
+    def evaluate(model, data_loader, mode="supervised", threshold=0.5):
+        """
+        Evaluates a trained model on a given dataset.
+
+        Args:
+            model: The trained neural network model.
+            data_loader: DataLoader for the evaluation dataset.
+            mode (str): Evaluation mode. Options: "supervised", "autoencoder", "constrained_autoencoder", "regression".
+            threshold (float): Threshold for converting probabilities/logits to binary predictions
+                               in supervised and constrained_autoencoder modes. Ignored in 'autoencoder' and 'regression' modes.
+            criterion: Optional. The loss function to calculate evaluation loss.
+
+        Returns:
+            dict: A dictionary containing the total loss (if criterion is provided) and evaluation metrics
+                  based on the mode.
+        """
+        model.eval()
+        total_loss = 0.0
+        all_preds = []
+        all_labels = []
+
+        # Criterion is not passed in evaluate, assuming loss calculation is part of the model or not needed for evaluation metrics only.
+        # If loss is needed, the criterion would need to be passed or inferred.
+        # For now, focusing on metrics calculable from preds and labels/inputs.
+        criterion = None # Placeholder - pass criterion to this method if needed for evaluation loss.
+
+
+        logging.info(f"Starting evaluation process (mode: {mode})")
+        if mode in ["supervised", "constrained_autoencoder"]:
+             logging.info(f"Threshold for binary prediction: {threshold}")
+
+
+        with torch.no_grad():
+            for X_batch, y_batch in data_loader:
+                if mode == "autoencoder":
+                    x_pred = model(X_batch)
+                    if criterion:
+                        loss = criterion(x_pred, X_batch)
+                        total_loss += loss.item()
+                    # No additional metrics collected for standard autoencoder evaluation
+
+                elif mode in ["supervised", "regression", "constrained_autoencoder"]:
+                    if mode == "supervised":
+                        y_pred = model(X_batch)
+                        if criterion:
+                             loss = criterion(y_pred, y_batch)
+                             total_loss += loss.item()
+                    elif mode == "regression":
+                        y_pred = model(X_batch)
+                        if criterion:
+                             loss = criterion(y_pred, y_batch)
+                             total_loss += loss.item()
+                    elif mode == "constrained_autoencoder":
+                        X_pred, y_pred, z = model(X_batch)
+                        if criterion:
+                             loss_tuple = criterion(y_pred, X_pred, y_batch, X_batch)
+                             if isinstance(loss_tuple, tuple): loss, _, _ = loss_tuple
+                             else: loss = loss_tuple
+                             total_loss += loss.item()
+
+                    # Collect predictions and labels for metrics
+                    all_preds.extend(y_pred.cpu().numpy())
+                    all_labels.extend(y_batch.cpu().numpy())
+
+                else:
+                    raise ValueError(f"Invalid mode during evaluation: {mode}")
+
+        # Calculate and return metrics based on mode
+        all_labels_np = np.array(all_labels)
+        all_preds_np = np.array(all_preds)
+
+        evaluation_metrics = {}
+        if mode in ["supervised", "constrained_autoencoder"]:
+            evaluation_metrics = EvaluationUtils._calculate_classification_metrics(all_labels_np, all_preds_np, threshold)
+            logging.info("Evaluation Metrics:\n" +
+                         EvaluationUtils._print_bar(evaluation_metrics['accuracy'], "Accuracy") + "\n" +
+                         EvaluationUtils._print_bar(evaluation_metrics['precision'], "Precision (s)") + "\n" +
+                         EvaluationUtils._print_bar(evaluation_metrics['recall'], "Recall (s)") + "\n" +
+                         EvaluationUtils._print_bar(evaluation_metrics['f1_score'], "F1 Score (s)") + "\n" +
+                         EvaluationUtils._print_bar(evaluation_metrics['jaccard_index'], "Jaccard Idx (s)") + "\n" +
+                         EvaluationUtils._print_bar(1.0 - evaluation_metrics['hamming_loss'], "1 - Hamm Loss")
+                       )
+
+        elif mode == "regression":
+            evaluation_metrics = EvaluationUtils._calculate_regression_metrics(all_labels_np, all_preds_np)
+            logging.info("Evaluation Metrics:\n" +
+                         f"  MSE: {evaluation_metrics['mse']:.7f}\n" +
+                         f"  MAE: {evaluation_metrics['mae']:.7f}\n" +
+                         f"  R2 Score: {evaluation_metrics['r2_score']:.7f}"
+                        )
+        # If mode is autoencoder, evaluation_metrics remains empty
+
+        logging.info("Evaluation process finished.")
+
+        # Prepare the return dictionary
+        results = {
+            'total_loss': total_loss, # Will be 0.0 if criterion is not provided
+            'evaluation_metrics': evaluation_metrics # Contains mode-specific metrics or is empty for autoencoder
+        }
+
+        return results
+
 
 
     @staticmethod
