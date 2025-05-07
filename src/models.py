@@ -245,14 +245,14 @@ class VisionTransformerCNN(nn.Module):
     def __init__(self, input_size, patch_size, embed_dim, num_heads, num_classes, num_layers, hidden_dim, dropout_rate):
         super(VisionTransformerCNN, self).__init__()
         self.cnn = nn.Sequential(
-            nn.LazyConv1d(16, 4, stride=4),
+            nn.LazyConv1d(32, 8, padding=2, stride=4),
             nn.ReLU(),
-            nn.LazyConv1d(32, 4, stride=4),
+            nn.LazyConv1d(64, 8, padding=2, stride=4),
             nn.ReLU(),
-            nn.LazyConv1d(32, 1)
+            nn.LazyConv1d(64, 1)
         )
 
-        num_patches = 32
+        num_patches = 64
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.dropout = nn.Dropout(dropout_rate)
@@ -282,9 +282,9 @@ class VisionTransformerCNN(nn.Module):
         x = self.norm(x)
         cls_token_representation = x[:, 0]
         x = self.fc(cls_token_representation)
-        x = self.sigmoid(x)
 
-        return x
+
+        return self.sigmoid(x)
 
 
 class XRFClassifier(nn.Module):
