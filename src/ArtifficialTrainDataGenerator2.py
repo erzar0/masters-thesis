@@ -1,7 +1,10 @@
 import numpy as np
 import random 
 
-from .Elements import Elements
+if __name__ == '__main__':
+    from Elements import Elements
+else:
+    from .Elements import Elements
 from functools import reduce
 from tqdm import tqdm 
 from scipy.stats import beta
@@ -205,17 +208,37 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     # x, y = ArtifficialTrainDataGenerator2.generate_sample(np.linspace(0, 20, 4096,), ["pb", "cu", "wood"], [1, 2, 0.5], 0, 0, (0.2, 0.7) )
 
-    # plt.plot(x)
+    #    # plt.legend()
     # plt.savefig("temp.png")
-    # print(y)
-    # print(np.sum(x))
-    # print(np.sum(y))
-    plt.figure(figsize=(25, 5))
-    X, y = ArtifficialTrainDataGenerator2.generate_artificial_data(100)
-    for i in range(10):
-        plt.plot(X[i], label=f"y={", ".join([f"({Elements.NUM2SYMBOL[j] if j < len(Elements.NUM2SYMBOL) else "wood"}, {np.round(y[i][j]/4096, 4)})" for j in range(ArtifficialTrainDataGenerator2.TARGET_VECTOR_LENGTH + 1) if y[i][j] > 0])}")
-        print(np.sum(X[i]), np.sum(y[i]))
-    plt.legend()
-    plt.savefig("temp.png")
+
+    square_size = 20
+    num_elements = len(Elements.LINES)
+    energy_range = np.linspace(0, 20, 4096)
+
+    result = np.zeros((num_elements * square_size, num_elements * square_size, 4096))
+
+    for i, element_a in tqdm(enumerate(Elements.LINES.keys()), total=num_elements):
+        for j, element_b in enumerate(Elements.LINES.keys()):
+            for k in range(square_size):
+                for m in range(square_size):
+                    alpha = (square_size - 1 - k + m) / (2 * square_size)
+                    alpha = np.clip(alpha, 0, 1)  # Ensure alpha stays in [0, 1]
+
+                    a = ArtifficialTrainDataGenerator2._generate_element_sample(
+                        energy_range, element_a,
+                        mu_err_global=0.05, mu_max_err=0.05,
+                        sigma=0.2, cache_element_samples=False
+                    )
+                    b = ArtifficialTrainDataGenerator2._generate_element_sample(
+                        energy_range, element_b,
+                        mu_err_global=0.05, mu_max_err=0.05,
+                        sigma=0.2, cache_element_samples=False
+                    )
+
+                    result[square_size * i + k, square_size * j + m, :] = a * (1 - alpha) + b * alpha
+
+    np.save("test_data.npy", result)
+
+
 
 
