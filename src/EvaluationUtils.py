@@ -11,12 +11,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 import torch
+import wandb
 
 
 class EvaluationUtils:
 
     @staticmethod
-    def train(model, train_loader, valid_loader, optimizer, criterion, epochs=3, mode="supervised", patience=5, threshold=0.5):
+    def train(model, train_loader, valid_loader, optimizer, criterion, epochs=3, mode="supervised", patience=5, threshold=0.5, wandb_run=None):
         """
         Trains a model with options for different modes and evaluates using multiple metrics.
 
@@ -53,11 +54,13 @@ class EvaluationUtils:
         def _calculate_classification_metrics(all_labels_np, all_preds_np, threshold):
             """Calculates and returns classification metrics in a dictionary."""
             if not all_labels_np.size or not all_preds_np.size:
-                 logging.warning("No labels or predictions collected for metric calculation.")
-                 return {
-                     'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0,
-                     'f1_score': 0.0, 'jaccard_index': 0.0, 'hamming_loss': 1.0
-                 }
+                logging.warning("No labels or predictions collected for metric calculation.")
+                if  wandb_run:
+                    wandb.log({"accuracy": 0, "precision": 0, "recall": 0, "f1_score": 0, "jaccard_index": 0, "hamming_loss": 1})
+                return {
+                    'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0,
+                    'f1_score': 0.0, 'jaccard_index': 0.0, 'hamming_loss': 1.0
+                }
 
             # Ensure predictions are binary based on the threshold
             all_preds_binary = (all_preds_np >= threshold).astype(int)
@@ -210,18 +213,27 @@ class EvaluationUtils:
             all_preds_np = np.array(all_preds)
 
             if mode in ["supervised", "constrained_autoencoder"]:
-                 classification_metrics = _calculate_classification_metrics(all_labels_np, all_preds_np, threshold)
-                 for metric_name, metric_value in classification_metrics.items():
-                     metric_histories[metric_name].append(metric_value)
-
-                 logging.info("Validation Metrics:\n" +
-                              _print_bar(classification_metrics['accuracy'], "Accuracy") + "\n" +
-                              _print_bar(classification_metrics['precision'], "Precision (s)") + "\n" +
-                              _print_bar(classification_metrics['recall'], "Recall (s)") + "\n" +
-                              _print_bar(classification_metrics['f1_score'], "F1 Score (s)") + "\n" +
-                              _print_bar(classification_metrics['jaccard_index'], "Jaccard Idx (s)") + "\n" +
-                              _print_bar(1.0 - classification_metrics['hamming_loss'], "1 - Hamm Loss") # Display 1 - Hamming Loss for easier interpretation
-                            )
+                classification_metrics = _calculate_classification_metrics(all_labels_np, all_preds_np, threshold)
+                for metric_name, metric_value in classification_metrics.items():
+                    metric_histories[metric_name].append(metric_value)
+                
+                logging.info("Validation Metrics:\n" +
+                            _print_bar(classification_metrics['accuracy'], "Accuracy") + "\n" +
+                            _print_bar(classification_metrics['precision'], "Precision (s)") + "\n" +
+                            _print_bar(classification_metrics['recall'], "Recall (s)") + "\n" +
+                            _print_bar(classification_metrics['f1_score'], "F1 Score (s)") + "\n" +
+                            _print_bar(classification_metrics['jaccard_index'], "Jaccard Idx (s)") + "\n" +
+                            _print_bar(1.0 - classification_metrics['hamming_loss'], "1 - Hamm Loss") # Display 1 - Hamming Loss for easier interpretation
+                        )
+                if  wandb_run:
+                    wandb.log({
+                        "val_accuracy": classification_metrics['accuracy'],
+                        "val_precision": classification_metrics['precision'],
+                        "val_recall": classification_metrics['recall'],
+                        "val_f1_score": classification_metrics['f1_score'],
+                        "val_jaccard_index": classification_metrics['jaccard_index'],
+                        "val_hamming_loss": 1.0 - classification_metrics['hamming_loss']
+                    })
 
             elif mode == "regression":
                  regression_metrics = _calculate_regression_metrics(all_labels_np, all_preds_np)
@@ -233,6 +245,13 @@ class EvaluationUtils:
                               f"  MAE: {regression_metrics['mae']:.7f}\n" +
                               f"  R2 Score: {regression_metrics['r2_score']:.7f}"
                              )
+                
+                 if  wandb_run:
+                    wandb.log({
+                        "val_mse": regression_metrics['mse'],
+                        "val_mae": regression_metrics['mae'],
+                        "val_r2_score": regression_metrics['r2_score']
+                    })
 
 
             if avg_valid_loss < best_loss:
