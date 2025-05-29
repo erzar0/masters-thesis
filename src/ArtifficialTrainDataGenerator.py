@@ -1,7 +1,10 @@
 import numpy as np
 import random 
 
-from .Elements import Elements
+if __name__ != "__main__":
+    from .Elements import Elements
+else:
+    from .Elements import Elements
 from functools import reduce
 from tqdm import tqdm 
 from scipy.stats import beta

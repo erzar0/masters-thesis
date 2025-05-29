@@ -233,6 +233,7 @@ if __name__ == "__main__":
                         energy_range, element_b,
                         mu_err_global=0.05, mu_max_err=0.05,
                         sigma=0.2, cache_element_samples=False
+                        
                     )
 
                     result[square_size * i + k, square_size * j + m, :] = a * (1 - alpha) + b * alpha
