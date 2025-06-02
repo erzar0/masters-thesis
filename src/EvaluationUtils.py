@@ -1,4 +1,4 @@
-from .ArtifficialTrainDataGenerator import ArtifficialTrainDataGenerator
+from .ArtificialTrainDataGenerator import ArtifficialTrainDataGenerator
 from .Elements import Elements
 from .FeatureEnhancer import FeatureEnhancer
 from sklearn import metrics
