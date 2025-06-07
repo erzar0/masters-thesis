@@ -155,25 +155,9 @@ class LT_TransformerBlock(nn.Module):
         return img_tokens, lbl_tokens
 
 
-# --- LT Vision Transformer ---
 class LT_VisionTransformer(nn.Module):
     def __init__(self, input_size, patch_size, embed_dim, num_heads, num_outputs, num_layers, num_lt_layers, hidden_dim, dropout_rate, in_channels=1):
-        """
-        Args:
-            input_size (int): Length of the input sequence (e.g., time series length or flattened image dim).
-            patch_size (int): Size of each patch for 1D Conv embedding.
-            embed_dim (int): Dimension of token embeddings.
-            num_heads (int): Number of attention heads.
-            num_outputs (int): Number of output classes (labels).
-            num_layers (int): Total number of transformer blocks.
-            num_lt_layers (int): Number of LT_TransformerBlocks at the end (N2 in paper [cite: 39]).
-            hidden_dim (int): Hidden dimension of the MLP in transformer blocks.
-            dropout_rate (float): Dropout rate.
-            in_channels (int): Number of input channels (e.g., 1 for grayscale).
-        """
         super(LT_VisionTransformer, self).__init__()
-        print(num_lt_layers)
-        print(num_layers)
         assert num_lt_layers <= num_layers, "num_lt_layers cannot exceed num_layers"
         self.num_outputs = num_outputs
         self.num_lt_layers = num_lt_layers
@@ -381,16 +365,6 @@ class ResNet1D(nn.Module):
 
 
 class XRFNetCountModel(nn.Module):
-    """
-    CNN model for inferring XRF net counts, based on the provided architecture.
-
-    Adheres to constraints: no normalization, no dropout, no biases.
-    Designed for 1D spectra of initial length 1024.
-
-    Args:
-        num_outputs (int): The number of output values (spectral series counts).
-                           Based on the description, this is 58.
-    """
     def __init__(self, num_outputs: int = 17):
         super(XRFNetCountModel, self).__init__()
 
@@ -433,28 +407,25 @@ class XRFNetCountModel(nn.Module):
                  f"Expected input shape (batch_size, 1, 4096), but got {x.shape}"
              )
 
-        # --- Feature Extraction ---
         x = self.pool666(x)
         x = self.conv1(x)
         x = self.pool1(x)
-        x = self.relu1(x) # Output: (B, 24, 512)
+        x = self.relu1(x) 
 
         x = self.conv2(x)
         x = self.pool2(x)
-        x = self.relu2(x) # Output: (B, 48, 256)
+        x = self.relu2(x)
 
         x = self.conv3(x)
         x = self.pool3(x)
-        x = self.relu3(x) # Output: (B, 96, 128)
+        x = self.relu3(x)
 
-        x = self.conv4(x) # Output: (B, 192, 128) - Assuming stride 1 to match stated output length
-        x = self.conv5(x) # Output: (B, 192, 32) - Replaces MaxPool and ReLU
+        x = self.conv4(x)
+        x = self.conv5(x) 
 
-        # --- Flatten ---
-        x = self.flatten(x) # Output: (B, 6144)
+        x = self.flatten(x) 
 
-        # --- Fully Connected Layers ---
-        x = self.fc1(x) # Output: (B, 6144)
+        x = self.fc1(x) 
         x = self.fc2(x) 
 
         return x
@@ -490,14 +461,14 @@ def create_model(model_name: str, **kwargs):
         },
         "lt_vit": {
             "input_size": 4096,
-            "patch_size": 16,
+            "patch_size": 256,
             "embed_dim": 256,
             "num_heads": 8,
             "num_outputs": 17,
             "num_layers": 6,
             "num_lt_layers": 2,
             "hidden_dim": 256,
-            "dropout_rate": 0.1,
+            "dropout_rate": 0.0,
             "in_channels": 1,
         },
         "cnn_vit": {

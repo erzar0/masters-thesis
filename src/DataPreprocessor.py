@@ -10,11 +10,6 @@ from scipy.optimize import curve_fit
 from skimage.transform import resize
 from tqdm import tqdm
 
-try:
-    from .ArtificialTrainDataGenerator import ArtificialTrainDataGenerator
-except Exception as e:
-    from ArtificialTrainDataGenerator import ArtificialTrainDataGenerator
-
 
 class DataPreprocessor:
     """
@@ -29,7 +24,7 @@ class DataPreprocessor:
         min_energy: float = 0,
         max_energy: float = 20,
         energy_margin: float = 1,
-        target_length: int = ArtificialTrainDataGenerator.CHANNELS,
+        target_length: int = 4096,
         polyfit_deg: int = 1,
         extrapolate: bool = True,
         discrete_transformation: bool = False,
@@ -193,6 +188,129 @@ class DataPreprocessor:
                         continue
 
         return extrapolated
+    
+    @staticmethod
+    def bisect_subtract_residual(
+        a: np.ndarray,
+        b: np.ndarray,
+        target_fraction: float = 0.1,
+        tol: float = 0.01,
+        max_iter: int = 100, # Bisection converges fast, 100 is usually plenty
+        max_init_iter: int = 20, # Max iterations for finding initial alpha_high
+        initial_alpha_high_factor: float = 0.5, # Original heuristic factor
+        epsilon: float = 1e-9 # Small value to prevent division by zero
+    ) -> np.ndarray:
+        """
+        Subtracts spectrum `b` from `a` using bisection until `target_fraction`
+        of resulting values are negative. Includes robust initial bound finding
+        and safe normalization.
+
+        Parameters:
+            a (np.ndarray): Original spectrum (should be non-negative).
+            b (np.ndarray): Spectrum to subtract (residual, should be non-negative).
+            target_fraction (float): Target fraction of negative values in the
+                                    intermediate result (a - alpha*b). Must be > 0.
+            tol (float): Tolerance for stopping bisection (difference between
+                        actual and target negative fraction).
+            max_iter (int): Maximum number of bisection iterations.
+            max_init_iter (int): Maximum iterations for finding initial upper bound.
+            initial_alpha_high_factor (float): Initial guess factor for alpha_high
+                                            relative to peak ratios.
+            epsilon (float): Small number to prevent division by zero.
+
+        Returns:
+            np.ndarray: Adjusted spectrum (a - alpha*b) with negative values clipped
+                        to zero and normalized to max value of 1. Returns array of
+                        zeros if the result is all non-positive after subtraction
+                        and clipping.
+
+        Raises:
+            ValueError: If spectra shapes mismatch, or if target_fraction <= 0.
+            RuntimeError: If a suitable initial upper bound alpha_high cannot be found.
+        """
+        if a.shape != b.shape:
+            raise ValueError("Spectra `a` and `b` must have the same shape.")
+        if not (0 < target_fraction < 1):
+            raise ValueError("target_fraction must be between 0 and 1 (exclusive).")
+
+        # --- Robust Initial Bounds ---
+        alpha_low = 0.0
+
+        # Calculate initial guess for alpha_high
+        max_a = np.max(a)
+        max_b = np.max(b)
+
+        if max_b <= epsilon: # Already checked above, but belt-and-suspenders
+            alpha_high = 1.0 # Arbitrary guess, b is zero anyway
+        else:
+            # Heuristic: scale so peaks roughly match, then scale by factor
+            alpha_high = (max_a / max_b) * initial_alpha_high_factor
+
+        # Ensure alpha_high is at least slightly positive
+        alpha_high = max(alpha_high, epsilon)
+
+        # Check if initial alpha_high produces enough negative values.
+        # If not, increase it until it does or max_init_iter is reached.
+        iter_init = 0
+        while np.mean((a - alpha_high * b) < 0) <= target_fraction and iter_init < max_init_iter :
+            # Increase alpha_high exponentially
+            alpha_high *= 2.0
+            iter_init += 1
+
+        # Check if we found a valid upper bound
+        if iter_init == max_init_iter and np.mean((a - alpha_high * b) < 0) <= target_fraction:
+            # This could happen if e.g. target_fraction is very high and 'a' always dominates 'b'
+            raise RuntimeError(
+                f"Could not find an initial alpha_high (tried up to {alpha_high:.2e}) "
+                f"that produces a negative fraction > {target_fraction:.3f}. "
+                f"Check inputs or target_fraction."
+            )
+
+
+        # --- Bisection Search ---
+        final_alpha = alpha_low # Default if loop doesn't run
+        for i in range(max_iter):
+            alpha = (alpha_low + alpha_high) / 2
+            result_intermediate = a - alpha * b
+
+            negative_fraction = np.mean(result_intermediate < 0)
+
+            # Check for convergence
+            if abs(negative_fraction - target_fraction) < tol:
+                final_alpha = alpha
+                break
+
+            # Narrow the interval
+            if negative_fraction > target_fraction:
+                # Too many negatives, alpha is too high
+                alpha_high = alpha
+            else:
+                # Too few negatives, alpha is too low
+                alpha_low = alpha
+            final_alpha = alpha # Store last value in case max_iter is reached
+
+        else: # nobreak - loop finished without converging within tolerance
+            warnings.warn(
+                f"Bisection did not converge within {tol=:.3g} after {max_iter} iterations. "
+                f"Final negative fraction = {negative_fraction:.3f} (target = {target_fraction:.3f}). "
+                f"Using alpha = {final_alpha:.3e}.",
+                RuntimeWarning
+            )
+
+        # --- Post-Processing ---
+        # Calculate final result with the determined alpha
+        result = a - final_alpha * b
+
+        # Clip negative values to zero
+        result[result < 0] = 0
+
+        # Normalize safely
+        max_val = np.max(result)
+        if max_val > epsilon: # Use epsilon here for floating point comparison
+            result = result / max_val
+
+        return result
+
 
 
 if __name__ == '__main__':
