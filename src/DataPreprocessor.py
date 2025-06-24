@@ -109,12 +109,13 @@ class DataPreprocessor:
         spectrum: np.ndarray,
         peaks: np.ndarray,
         energies: np.ndarray,
+        discrete_transformation: bool = False,
         **kwargs
     ) -> tuple[np.ndarray, np.ndarray]:
         if spectrum.ndim != 1:
             raise ValueError("Input spectrum must be 1D.")
         reshaped = spectrum.reshape(1, 1, -1)
-        energy_range, processed = DataPreprocessor.processed_spectra(reshaped, peaks, energies, **kwargs)
+        energy_range, processed = DataPreprocessor.processed_spectra(reshaped, peaks, energies, discrete_transformation=discrete_transformation, **kwargs)
         return energy_range, processed.flatten()
 
     @staticmethod

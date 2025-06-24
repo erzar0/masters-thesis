@@ -7,8 +7,10 @@ import multiprocessing
 
 try:
     from Elements import Elements
+    from FeatureEnhancer import FeatureEnhancer
 except Exception as e:
     from .Elements import Elements
+    from .FeatureEnhancer import FeatureEnhancer
 
 
 class ArtificialTrainDataGenerator:
@@ -51,7 +53,7 @@ class ArtificialTrainDataGenerator:
 
         peak = ArtificialTrainDataGenerator.gaussian(energy_range, mu, sigma)
         peak = (peak / np.max(peak)) * intensity
-        plt.plot(np.linspace(0, 20, 4096), peak, label=f"{kind}({line["name"]}) (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
+        # plt.plot(np.linspace(0, 20, 4096), peak, label=f"{kind}({line["name"]}) (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
         return spectrum + peak
 
     @staticmethod
@@ -71,7 +73,7 @@ class ArtificialTrainDataGenerator:
 
             peak = ArtificialTrainDataGenerator.gaussian(energy_range, mu, sigma)
             peak = (peak / np.max(peak)) * intensity
-            plt.plot(np.linspace(0, 20, 4096), peak, label=f"{line["name"]} (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
+            # plt.plot(np.linspace(0, 20, 4096), peak, label=f"{line["name"]} (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
             spectrum += peak
 
             if mu > Elements.ESC_THRESHOLD_ENERGY:
@@ -177,76 +179,118 @@ class ArtificialTrainDataGenerator:
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
+    # au= ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="au",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
 
-    spectrum = ArtificialTrainDataGenerator.generate_element_sample(
-        energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
-        element="au",
-        mu_global_err=0.05,
-        mu_local_err=0.05,
-        sigma=0.6,
-        use_cache=False)
-    plt.plot(np.linspace(0, 20, 4096), spectrum, label=r"Mixture of Au Lines", color="black")
+    # fe = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="fe",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
     
-    plt.title("Sample Spectrum of Au")
-    plt.ylim(0, 1.5)
-    plt.xlabel("Energy (keV)")
-    plt.ylabel("Intensity (a. u.)")
-    plt.legend()
-    plt.savefig("data/plots/au.svg")
+    # plt.figure()
+    # au = au * 0.6
+    # fe = fe * 0.4
+    # res= au + fe
+    # # res /= np.max(res)
+    # plt.plot(np.linspace(0, 20, 4096), au, label=r"Au Spectrum", color="green", alpha=1)
+    # plt.plot(np.linspace(0, 20, 4096), fe, label=r"Fe Spectrum", color="red", alpha=1)
+    # plt.plot(np.linspace(0, 20, 4096), res, label=r"Fe-Au Mixture", color="black", alpha=1, linestyle='dotted')
+    # plt.title("Mixture of Au and Fe Spectra")
+    # plt.legend()
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.savefig("data/plots/au_fe_mixture.svg", bbox_inches='tight', pad_inches=0.0)
 
 
-    plt.figure()
-    x, y = ArtificialTrainDataGenerator.generate_sample(
-        energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
-        elements=["au"],
-        percentages=[1.0],
-        mu_local_err=0.05,
-        mu_global_err=0.1,
-        sigma=0.6,
-        use_cache=False)
-    plt.figure()
-    plt.plot(np.linspace(0, 20, 4096), spectrum, label=r"Mixture of Au Lines", color="black")
-    plt.plot(np.linspace(0, 20, 4096), x, label="Au Spectrum with Background Noise", color="blue")
 
-    plt.title("Spectrum of Au with Background Noise")
-    plt.ylim(0, 1.5)
-    plt.xlabel("Energy (keV)")
-    plt.ylabel("Intensity (a. u.)")
-    plt.legend()
-    plt.savefig("data/plots/au_noise.svg")
-
-    from FeatureEnhancer import FeatureEnhancer 
-    plt.figure()
-    plt.plot(np.linspace(0, 20, 4096), FeatureEnhancer._metropolis_hasting_mcmc(x, steps=20000), label="Au Spectrum Augmented with Metropolis-Hastings", color="red")
-    plt.plot(np.linspace(0, 20, 4096), x, label=r"Au Spectrum with Background Noise", color="black")
-    plt.title("Au Spectrum Augmented with Metropolis-Hastings")
-    plt.ylim(0, 1.5)
-    plt.xlabel("Energy (keV)")
-    plt.ylabel("Intensity (a. u.)")
-    plt.legend()
-    plt.savefig("data/plots/au_mcmc.svg")
+    # spectrum = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="au",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
+    # plt.plot(np.linspace(0, 20, 4096), spectrum, label=r"Mixture of Au Lines", color="black")
+    
+    # plt.title("Sample Spectrum of Au")
+    # plt.ylim(0, 1.5)
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.legend()
+    # plt.savefig("data/plots/au.svg")
 
 
-    # grid_size = 20
-    # num_elements = len(Elements.LINES)
-    # energy_range = np.linspace(0, 20, 4096)
-    # result = np.zeros((num_elements * grid_size, num_elements * grid_size, 4096))
+    # plt.figure()
+    # x = ArtificialTrainDataGenerator.generate_element_sample(
 
-    # for i, a in tqdm(enumerate(Elements.LINES), total=num_elements, desc="Left Element"):
-    #     for j, b in enumerate(Elements.LINES):
-    #         for k in range(grid_size):
-    #             for m in range(grid_size):
-    #                 alpha = (grid_size - 1 - k + m) / (2 * grid_size)
-    #                 alpha = np.clip(alpha, 0, 1)
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="au",
+    #     mu_local_err=0.05,
+    #     mu_global_err=0.1,
+    #     sigma=0.6,
+    #     use_cache=False)
+    # plt.figure()
+    # res = x * 0.6 + ArtificialTrainDataGenerator.WOOD_SPECTRUM * 0.4
+    # plt.plot(np.linspace(0, 20, 4096), x * 0.6, label=r"Au Spectrum", color="blue")
+    # plt.plot(np.linspace(0, 20, 4096), ArtificialTrainDataGenerator.WOOD_SPECTRUM * 0.4, label="Background Spectrum", color="red")
+    # plt.plot(np.linspace(0, 20, 4096), res, label="Au Spectrum with Background Noise", color="black", linestyle="dotted")
 
-    #                 spec_a = ArtificialTrainDataGenerator.generate_element_sample(
-    #                     energy_range, a, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
-    #                 )
-    #                 spec_b = ArtificialTrainDataGenerator.generate_element_sample(
-    #                     energy_range, b, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
-    #                 )
+    # plt.title("Spectrum of Au with Background Noise")
+    # plt.ylim(0, 1)
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.legend()
+    # plt.savefig("data/plots/au_noise.svg")
 
-    #                 result[i * grid_size + k, j * grid_size + m] = spec_a * (1 - alpha) + spec_b * alpha
-    #                 result[i * grid_size + k, j * grid_size + m] /= np.max(result[i * grid_size + k, j * grid_size + m])
+    # from FeatureEnhancer import FeatureEnhancer 
+    # plt.figure()
+    # plt.plot(np.linspace(0, 20, 4096), FeatureEnhancer._metropolis_hasting_mcmc(x, steps=20000), label="Au Spectrum Augmented with Metropolis-Hastings", color="red")
+    # plt.plot(np.linspace(0, 20, 4096), x, label=r"Au Spectrum with Background Noise", color="black")
+    # plt.title("Au Spectrum Augmented with Metropolis-Hastings")
+    # plt.ylim(0, 1.5)
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.legend()
+    # plt.savefig("data/plots/au_mcmc.svg")
 
-    # np.save("data/objects/test_data_default.npy", result)
+
+
+
+    grid_size = 20
+    num_elements = len(Elements.LINES)
+    energy_range = np.linspace(0, 20, 4096)
+    result = np.zeros((num_elements * grid_size, num_elements * grid_size, 4096))
+
+    for i, a in enumerate(Elements.LINES):
+        for j, b in tqdm(enumerate(Elements.LINES)):
+            for k in range(grid_size):
+                for m in range(grid_size):
+                    alpha = (grid_size - 1 - k + m) / (2 * grid_size)
+                    alpha = np.clip(alpha, 0, 1)
+
+                    spec_a = ArtificialTrainDataGenerator.generate_element_sample(
+                        energy_range, a, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
+                    )
+                    spec_b = ArtificialTrainDataGenerator.generate_element_sample(
+                        energy_range, b, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
+                    )
+
+                    result[i * grid_size + k, j * grid_size + m] = spec_a * (1 - alpha) + spec_b * alpha
+                    result[i * grid_size + k, j * grid_size + m] /= np.max(result[i * grid_size + k, j * grid_size + m])
+
+                    wood_ratio = np.random.uniform(0, 1, 1)[0]
+                    wood = wood_ratio * ArtificialTrainDataGenerator.WOOD_SPECTRUM
+                    result[i * grid_size + k, j * grid_size + m] = (1 - wood_ratio) * result[i * grid_size + k, j * grid_size + m] + wood
+    
+    h, w, _ = result.shape
+    result = FeatureEnhancer.process_spectra(result.reshape((h * w, -1))).reshape(h, w, -1)
+
+    np.save("data/objects/pigment_vs_pigment_noise_mh.npy", result)
