@@ -105,12 +105,24 @@ class ArtificialTrainDataGenerator:
 
             sample += spectrum
             target[Elements.SYMBOL2NUM[element]] = np.sum(spectrum)
+        
 
-        wood_ratio = np.random.beta(1.5, 5, size=1)[0]
-        wood = wood_ratio * ArtificialTrainDataGenerator.WOOD_SPECTRUM
-        sample = (1 - wood_ratio) * sample + wood
-        target *= (1 - wood_ratio)
-        target[-1] = np.sum(wood)
+        mid = np.argmax(sample)
+        wood_spectrum = ArtificialTrainDataGenerator.WOOD_SPECTRUM.copy()
+        wood_spectrum_left = wood_spectrum[:mid]
+        wood_spectrum_right = wood_spectrum[mid:]
+        
+        wood_ratio_left = np.random.uniform(0, 1)
+        wood_ratio_right = np.random.uniform(0, wood_ratio_left)
+        wood_spectrum_left = wood_ratio_left * wood_spectrum_left
+        wood_spectrum_right = wood_ratio_right * wood_spectrum_right
+
+        sample = (1 - wood_ratio_left) * sample
+        sample[:mid] += wood_spectrum_left
+        sample[mid:] += wood_spectrum_right
+
+        target *= (1 - wood_ratio_left)
+        target[-1] = np.sum(wood_spectrum_left) + np.sum(wood_spectrum_right)
 
         sample /= np.max(sample)
         target /= np.max(sample)
@@ -178,6 +190,20 @@ class ArtificialTrainDataGenerator:
 # Visualization or debugging
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+
+    x, y= ArtificialTrainDataGenerator.generate_sample(
+        energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+        elements=["pb"],
+        percentages=[0.6, 0.4],
+        mu_global_err=0.05,
+        mu_local_err=0.05,
+        sigma=0.6,
+        use_cache=False
+    )
+
+    plt.plot(x)
+    plt.savefig("sample_spectrum.svg", bbox_inches='tight', pad_inches=0.0)
+
 
     # au= ArtificialTrainDataGenerator.generate_element_sample(
     #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
@@ -264,33 +290,33 @@ if __name__ == "__main__":
 
 
 
-    grid_size = 20
-    num_elements = len(Elements.LINES)
-    energy_range = np.linspace(0, 20, 4096)
-    result = np.zeros((num_elements * grid_size, num_elements * grid_size, 4096))
+    # grid_size = 20
+    # num_elements = len(Elements.LINES)
+    # energy_range = np.linspace(0, 20, 4096)
+    # result = np.zeros((num_elements * grid_size, num_elements * grid_size, 4096))
 
-    for i, a in enumerate(Elements.LINES):
-        for j, b in tqdm(enumerate(Elements.LINES)):
-            for k in range(grid_size):
-                for m in range(grid_size):
-                    alpha = (grid_size - 1 - k + m) / (2 * grid_size)
-                    alpha = np.clip(alpha, 0, 1)
+    # for i, a in enumerate(Elements.LINES):
+    #     for j, b in tqdm(enumerate(Elements.LINES)):
+    #         for k in range(grid_size):
+    #             for m in range(grid_size):
+    #                 alpha = (grid_size - 1 - k + m) / (2 * grid_size)
+    #                 alpha = np.clip(alpha, 0, 1)
 
-                    spec_a = ArtificialTrainDataGenerator.generate_element_sample(
-                        energy_range, a, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
-                    )
-                    spec_b = ArtificialTrainDataGenerator.generate_element_sample(
-                        energy_range, b, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
-                    )
+    #                 spec_a = ArtificialTrainDataGenerator.generate_element_sample(
+    #                     energy_range, a, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
+    #                 )
+    #                 spec_b = ArtificialTrainDataGenerator.generate_element_sample(
+    #                     energy_range, b, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
+    #                 )
 
-                    result[i * grid_size + k, j * grid_size + m] = spec_a * (1 - alpha) + spec_b * alpha
-                    result[i * grid_size + k, j * grid_size + m] /= np.max(result[i * grid_size + k, j * grid_size + m])
+    #                 result[i * grid_size + k, j * grid_size + m] = spec_a * (1 - alpha) + spec_b * alpha
+    #                 result[i * grid_size + k, j * grid_size + m] /= np.max(result[i * grid_size + k, j * grid_size + m])
 
-                    wood_ratio = np.random.uniform(0, 1, 1)[0]
-                    wood = wood_ratio * ArtificialTrainDataGenerator.WOOD_SPECTRUM
-                    result[i * grid_size + k, j * grid_size + m] = (1 - wood_ratio) * result[i * grid_size + k, j * grid_size + m] + wood
+    #                 wood_ratio = np.random.uniform(0, 1, 1)[0]
+    #                 wood = wood_ratio * ArtificialTrainDataGenerator.WOOD_SPECTRUM
+    #                 result[i * grid_size + k, j * grid_size + m] = (1 - wood_ratio) * result[i * grid_size + k, j * grid_size + m] + wood
     
-    h, w, _ = result.shape
-    result = FeatureEnhancer.process_spectra(result.reshape((h * w, -1))).reshape(h, w, -1)
+    # h, w, _ = result.shape
+    # result = FeatureEnhancer.process_spectra(result.reshape((h * w, -1))).reshape(h, w, -1)
 
-    np.save("data/objects/pigment_vs_pigment_noise_mh.npy", result)
+    # np.save("data/objects/pigment_vs_pigment_noise_mh.npy", result)
