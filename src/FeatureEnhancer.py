@@ -49,8 +49,7 @@ class FeatureEnhancer:
             np.array: A 1D NumPy array representing the enhanced spectrum,
                       with the same shape as the input `spectrum`.
         """
-        steps = randint(500, 100000)
-        spectrum = FeatureEnhancer._metropolis_hasting_mcmc(spectrum, steps=steps)
+        spectrum = FeatureEnhancer.add_poisson_noise(spectrum, scale=int(2 ** np.random.uniform(0, 7)))
         return spectrum
 
     @staticmethod
@@ -164,6 +163,13 @@ class FeatureEnhancer:
         if max_result == 0:  # Handle case where no points were accepted (e.g., all probabilities were zero)
             return result
         return result / max_result
+    
+    @staticmethod
+    def add_poisson_noise(signal, scale=1000):
+        noisy = np.random.poisson(signal * scale) / scale
+        noisy /= np.max(noisy)
+        return noisy
+
 
     @staticmethod
     def _process_spectra_batch(spectra_batch: np.array, order: int):
