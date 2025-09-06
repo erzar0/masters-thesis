@@ -4,6 +4,8 @@ from functools import reduce
 from tqdm import tqdm
 from scipy.stats import beta
 import multiprocessing
+import matplotlib.pyplot as plt
+
 
 try:
     from Elements import Elements
@@ -116,6 +118,7 @@ class ArtificialTrainDataGenerator:
 
             sample += spectrum
             target[Elements.SYMBOL2NUM[element]] = np.sum(spectrum)
+            # plt.plot(np.linspace(0, 20, 4096), spectrum, label=f"{element} contribution")
         
 
         wood_spectrum = ArtificialTrainDataGenerator.WOOD_SPECTRUM.copy()
@@ -126,20 +129,26 @@ class ArtificialTrainDataGenerator:
 
         background_spectrum = wood_spectrum * cumsum_window
 
-        wood_ratio = np.random.uniform(0, 1)
-        background_spectrum *= wood_ratio
+        background_ratio = np.random.uniform(0, 1)
+        while True:
+            attenuated_background_spectrum = background_spectrum * background_ratio 
+            attenuated_sample = (1 - background_ratio) * sample
+            attenuated_target = (1 - background_ratio) * target
+            attenuated_target[-1] = np.sum(attenuated_background_spectrum)
+            final_sample = attenuated_sample + attenuated_background_spectrum
 
-        sample = (1 - wood_ratio) * sample
+            division_coeff = np.max(final_sample)
+            normalized_attenuated_background_spectrum = attenuated_background_spectrum / division_coeff
+            if np.any(normalized_attenuated_background_spectrum > wood_spectrum): 
+                background_ratio /= 2
+                continue
+            
+            final_target = attenuated_target / np.max(final_sample)
+            final_sample = final_sample / np.max(final_sample)
+            break
 
-        sample = sample + background_spectrum
 
-        target *= (1 - wood_ratio)
-        target[-1] = np.sum(background_spectrum)
-
-        target /= np.max(sample)
-        sample /= np.max(sample)
-
-        return sample, target
+        return final_sample, final_target 
 
     @staticmethod
     def generate_many(samples, mu_local_err=0.0, mu_global_err=0.0, sigma_range=(0.2, 0.6),

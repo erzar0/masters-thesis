@@ -5,6 +5,25 @@ if __name__ == '__main__':
 else:
     from .Elements import Elements
 
+class MLP(nn.Module):
+    def __init__(self, num_outputs=17):
+        super(MLP, self).__init__()
+        self.model = nn.Sequential(
+            nn.LazyLinear(2048),
+            nn.ReLU(),
+            nn.LazyLinear(1024),
+            nn.ReLU(),
+            nn.LazyLinear(512),
+            nn.ReLU(),
+            nn.LazyLinear(256),
+            nn.ReLU(),
+            nn.LazyLinear(num_outputs)
+        )
+    
+    def forward(self, x):
+        x.squeeze_(1)
+        return self.model(x)
+
 class TransformerMLP(nn.Module):
     def __init__(self, embed_dim, hidden_dim, dropout_rate):
         super(TransformerMLP, self).__init__()
@@ -485,7 +504,10 @@ def create_model(model_name: str, **kwargs):
         },
         "xrfnet": {
             "num_outputs": 17,
-        }
+        },
+        "mlp": {
+            "num_outputs": 17,
+        },
     }
 
     # Merge default args with overrides
@@ -506,6 +528,9 @@ def create_model(model_name: str, **kwargs):
 
     elif model_name == 'xrfnet':
         return XRFNetCountModel(**args)
+
+    elif model_name == 'mlp':
+        return MLP(**args)
 
     else:
         raise ValueError(f"Unknown model name: {model_name}")
