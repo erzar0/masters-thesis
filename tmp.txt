@@ -1,0 +1,165 @@
+diff --git a/src/ArtificialTrainDataGenerator.py b/src/ArtificialTrainDataGenerator.py
+index f000cfd..1340f2d 100644
+--- a/src/ArtificialTrainDataGenerator.py
++++ b/src/ArtificialTrainDataGenerator.py
+@@ -4,8 +4,6 @@ from functools import reduce
+ from tqdm import tqdm
+ from scipy.stats import beta
+ import multiprocessing
+-import matplotlib.pyplot as plt
+-
+ 
+ try:
+     from Elements import Elements
+@@ -118,7 +116,6 @@ class ArtificialTrainDataGenerator:
+ 
+             sample += spectrum
+             target[Elements.SYMBOL2NUM[element]] = np.sum(spectrum)
+-            # plt.plot(np.linspace(0, 20, 4096), spectrum, label=f"{element} contribution")
+         
+ 
+         wood_spectrum = ArtificialTrainDataGenerator.WOOD_SPECTRUM.copy()
+@@ -129,26 +126,20 @@ class ArtificialTrainDataGenerator:
+ 
+         background_spectrum = wood_spectrum * cumsum_window
+ 
+-        background_ratio = np.random.uniform(0, 1)
+-        while True:
+-            attenuated_background_spectrum = background_spectrum * background_ratio 
+-            attenuated_sample = (1 - background_ratio) * sample
+-            attenuated_target = (1 - background_ratio) * target
+-            attenuated_target[-1] = np.sum(attenuated_background_spectrum)
+-            final_sample = attenuated_sample + attenuated_background_spectrum
+-
+-            division_coeff = np.max(final_sample)
+-            normalized_attenuated_background_spectrum = attenuated_background_spectrum / division_coeff
+-            if np.any(normalized_attenuated_background_spectrum > wood_spectrum): 
+-                background_ratio /= 2
+-                continue
+-            
+-            final_target = attenuated_target / np.max(final_sample)
+-            final_sample = final_sample / np.max(final_sample)
+-            break
+-
+-
+-        return final_sample, final_target 
++        wood_ratio = np.random.uniform(0, 1)
++        background_spectrum *= wood_ratio
++
++        sample = (1 - wood_ratio) * sample
++
++        sample = sample + background_spectrum
++
++        target *= (1 - wood_ratio)
++        target[-1] = np.sum(background_spectrum)
++
++        target /= np.max(sample)
++        sample /= np.max(sample)
++
++        return sample, target
+ 
+     @staticmethod
+     def generate_many(samples, mu_local_err=0.0, mu_global_err=0.0, sigma_range=(0.2, 0.6),
+diff --git a/src/Elements.py b/src/Elements.py
+index bffdf10..cb325c7 100644
+--- a/src/Elements.py
++++ b/src/Elements.py
+@@ -1,27 +1,25 @@
+ import numpy as np
+-from collections import OrderedDict
+-
+ 
+ class Elements():
+-    LINES = OrderedDict()
+-    LINES["as"] = (("k_alpha", 10.523, (1**2 + 0.51**2)**0.5), ("k_beta31", 11.723, (0.06**2 + 0.13**2)**0.5))
+-    LINES["au"] = (("l_alpha", 9.700, (1**2 + 0.11**2)**0.5), ("l_beta", 11.442, 0.55))
+-    LINES["ba"] = (("l_alpha", 4.460, (1**2 + 0.11**2)**0.5), ("l_beta", 4.82, 0.6))
+-    LINES["ca"] = (("k_alpha", 3.690, (1**2 + 0.5**2)**0.5), ("k_beta", 4.012, 0.13))
+-    LINES["cd"] = (("l_alpha", 3.130, (1**2 + 0.11**2)**0.5), ("l_beta1", 3.316, 0.58), ("l_beta", 3.528, 0.15), ("l_gamma", 3.716, 0.06))
+-    LINES["co"] = (("k_alpha", 6.927, (1**2 + 0.51**2)**0.5), ("k_beta", 7.649, 0.17))
+-    LINES["cr"] = (("k_alpha", 5.410, (1**2 + 0.5**2)**0.5), ("k_beta", 5.946, 0.15))
+-    LINES["cu"] = (("k_alpha", 8.037, (1**2 + 0.51**2)**0.5), ("k_beta", 8.905, 0.17))
+-    LINES["fe"] = (("k_alpha", 6.395, (1**2 + 0.5**2)**0.5), ("k_beta", 7.058, 0.17))
+-    LINES["hg"] = (("l_alpha2", 9.897, 0.11), ("l_alpha1", 9.988, 1), ("l_beta1", 11.824, 0.65))
+-    LINES["k" ] = (("k_alpha", 3.314, (1**2 + 0.5**2)**0.5), ("k_beta", 3.589, 0.11))
+-    LINES["mn"] = (("k_alpha", 5.893, (1**2 + 0.5**2)**0.5), ("k_beta", 6.490, 0.17))
+-    LINES["pb"] = (("l_alpha2", 10.449, 0.11), ("l_alpha1", 10.551, 1), ("l_beta", 12.618, (0.5**2)**0.5))
+-    LINES["ti"] = (("k_alpha", 4.508, (1**2 + 0.5**2)**0.5), ("k_beta", 4.931, 0.15))
+-    LINES["zn"] = (("k_alpha", 8.637, (1**2 + 0.51**2)**0.5), ("k_beta", 9.572, 0.17))
+-    LINES["zr"] = (("k_alpha", 15.740, (1**2 + 0.51**2)**0.5), )
+-     
+-    NUM2SYMBOL = [symbol for symbol in LINES.keys()]
++    LINES = {
++         "cr":  (("k_alpha", 5.410, (1**2 + 0.5**2)**0.5), ("k_beta", 5.946, 0.15))
++        , "as": (("k_alpha", 10.523, (1**2 + 0.51**2)**0.5), ("k_beta31", 11.723, (0.06**2 + 0.13**2)**0.5))
++        , "au": (("l_alpha", 9.700, (1**2 + 0.11**2)**0.5), ("l_beta", 11.442, 0.55))
++        , "ba": (("l_alpha", 4.460, (1**2 + 0.11**2)**0.5), ("l_beta", 4.82, 0.6))
++        , "ca": (("k_alpha", 3.690, (1**2 + 0.5**2)**0.5), ("k_beta", 4.012, 0.13))
++        , "cd": (("l_alpha", 3.130, (1**2 + 0.11**2)**0.5), ("l_beta1", 3.316, 0.58), ("l_beta215", 3.528, 0.15), ("l_gamma", 3.716, 0.06))
++        , "co": (("k_alpha", 6.927, (1**2 + 0.51**2)**0.5), ("k_beta", 7.649, 0.17))
++        , "cu": (("k_alpha", 8.037, (1**2 + 0.51**2)**0.5), ("k_beta", 8.905, 0.17))
++        , "fe": (("k_alpha", 6.395, (1**2 + 0.5**2)**0.5), ("k_beta", 7.058, 0.17))
++        , "hg": (("l_alpha2", 9.897, 0.11), ("l_alpha1", 9.988, 1), ("l_beta1", 11.824, 0.65))
++        , "k":  (("k_alpha", 3.314, (1**2 + 0.5**2)**0.5), ("k_beta", 3.589, 0.11))
++        , "mn": (("k_alpha", 5.893, (1**2 + 0.5**2)**0.5), ("k_beta", 6.490, 0.17))
++        , "pb": (("l_alpha2", 10.449, 0.11), ("l_alpha1", 10.551, 1), ("l_beta", 12.618, (0.5**2)**0.5))
++        , "ti": (("k_alpha", 4.508, (1**2 + 0.5**2)**0.5), ("k_beta", 4.931, 0.15))
++        , "zn": (("k_alpha", 8.637, (1**2 + 0.51**2)**0.5), ("k_beta", 9.572, 0.17))
++        , "zr": (("k_alpha", 15.740, (1**2 + 0.51**2)**0.5), )
++    }
++    NUM2SYMBOL = [symbol for symbol in sorted(LINES.keys())]
+     SYMBOL2NUM = {symbol : i for i, symbol in enumerate(NUM2SYMBOL)}
+     FANO = 5.8767709641972905
+     CU_THRESHOLD_ENERGY = 8.037
+diff --git a/src/models.py b/src/models.py
+index 98ffa32..7f38230 100644
+--- a/src/models.py
++++ b/src/models.py
+@@ -5,25 +5,6 @@ if __name__ == '__main__':
+ else:
+     from .Elements import Elements
+ 
+-class MLP(nn.Module):
+-    def __init__(self, num_outputs=17):
+-        super(MLP, self).__init__()
+-        self.model = nn.Sequential(
+-            nn.LazyLinear(2048),
+-            nn.ReLU(),
+-            nn.LazyLinear(1024),
+-            nn.ReLU(),
+-            nn.LazyLinear(512),
+-            nn.ReLU(),
+-            nn.LazyLinear(256),
+-            nn.ReLU(),
+-            nn.LazyLinear(num_outputs)
+-        )
+-    
+-    def forward(self, x):
+-        x.squeeze_(1)
+-        return self.model(x)
+-
+ class TransformerMLP(nn.Module):
+     def __init__(self, embed_dim, hidden_dim, dropout_rate):
+         super(TransformerMLP, self).__init__()
+@@ -504,10 +485,7 @@ def create_model(model_name: str, **kwargs):
+         },
+         "xrfnet": {
+             "num_outputs": 17,
+-        },
+-        "mlp": {
+-            "num_outputs": 17,
+-        },
++        }
+     }
+ 
+     # Merge default args with overrides
+@@ -529,9 +507,6 @@ def create_model(model_name: str, **kwargs):
+     elif model_name == 'xrfnet':
+         return XRFNetCountModel(**args)
+ 
+-    elif model_name == 'mlp':
+-        return MLP(**args)
+-
+     else:
+         raise ValueError(f"Unknown model name: {model_name}")
+ 
