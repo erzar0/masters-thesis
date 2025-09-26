@@ -64,7 +64,12 @@ class ArtificialTrainDataGenerator:
 
         peak = ArtificialTrainDataGenerator.gaussian(energy_range, mu, sigma)
         peak = (peak / np.max(peak)) * intensity
-        # plt.plot(np.linspace(0, 20, 4096), peak, label=f"{kind}({line["name"]}) (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
+        name = line["name"].split("_")
+        name[0] = name[0].capitalize()
+        name[1] = name[1].capitalize()
+        name[2] = name[2].replace("alpha", "α").replace("beta", "β")
+        name = name[0] + " " + name[1] + name[2]
+        plt.plot(np.linspace(0, 20, 4096), peak, label=f"Escape {name} (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
         return spectrum + peak
 
     @staticmethod
@@ -84,7 +89,12 @@ class ArtificialTrainDataGenerator:
 
             peak = ArtificialTrainDataGenerator.gaussian(energy_range, mu, sigma)
             peak = (peak / np.max(peak)) * intensity
-            # plt.plot(np.linspace(0, 20, 4096), peak, label=f"{line["name"]} (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
+            name = line["name"].split("_")
+            name[0] = name[0].capitalize()
+            name[1] = name[1].capitalize()
+            name[2] = name[2].replace("alpha", "α").replace("beta", "β")
+            name = name[0] + " " + name[1] + name[2]
+            plt.plot(np.linspace(0, 20, 4096), peak, label=f"{name} (μ={mu:.2f} keV, σ={sigma:.2f}keV)")
             spectrum += peak
 
             if mu > Elements.ESC_THRESHOLD_ENERGY:
@@ -126,20 +136,26 @@ class ArtificialTrainDataGenerator:
 
         background_spectrum = wood_spectrum * cumsum_window
 
-        wood_ratio = np.random.uniform(0, 1)
-        background_spectrum *= wood_ratio
+        background_ratio = np.random.uniform(0, 1)
+        while True:
+            attenuated_background_spectrum = background_spectrum * background_ratio 
+            attenuated_sample = (1 - background_ratio) * sample
+            attenuated_target = (1 - background_ratio) * target
+            attenuated_target[-1] = np.sum(attenuated_background_spectrum)
+            final_sample = attenuated_sample + attenuated_background_spectrum
 
-        sample = (1 - wood_ratio) * sample
+            division_coeff = np.max(final_sample)
+            normalized_attenuated_background_spectrum = attenuated_background_spectrum / division_coeff
+            if np.any(normalized_attenuated_background_spectrum > wood_spectrum): 
+                background_ratio /= 2
+                continue
+            
+            final_target = attenuated_target / np.max(final_sample)
+            final_sample = final_sample / np.max(final_sample)
+            break
 
-        sample = sample + background_spectrum
 
-        target *= (1 - wood_ratio)
-        target[-1] = np.sum(background_spectrum)
-
-        target /= np.max(sample)
-        sample /= np.max(sample)
-
-        return sample, target
+        return final_sample, final_target 
 
     @staticmethod
     def generate_many(samples, mu_local_err=0.0, mu_global_err=0.0, sigma_range=(0.2, 0.6),
@@ -203,9 +219,9 @@ class ArtificialTrainDataGenerator:
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    # x, y= ArtificialTrainDataGenerator.generate_sample(
+    # x, y= ArtificialTrainDataGenerator.generate_element_sample(
     #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
-    #     elements=["pb", "cr"],
+    #     element="au",
     #     percentages=[0.6, 0.4],
     #     mu_global_err=0.05,
     #     mu_local_err=0.05,
@@ -226,86 +242,233 @@ if __name__ == "__main__":
         mu_local_err=0.05,
         sigma=0.6,
         use_cache=False)
-
-    fe = ArtificialTrainDataGenerator.generate_element_sample(
-        energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
-        element="fe",
-        mu_global_err=0.05,
-        mu_local_err=0.05,
-        sigma=0.6,
-        use_cache=False)
     
-    plt.figure()
-    au = au * 0.6
-    fe = fe * 0.4
-    res= au + fe
-    # res /= np.max(res)
-    plt.plot(np.linspace(0, 20, 4096), au, label=r"Au Spectrum", color="green", alpha=1)
-    plt.plot(np.linspace(0, 20, 4096), fe, label=r"Fe Spectrum", color="red", alpha=1)
-    plt.plot(np.linspace(0, 20, 4096), res, label=r"Fe-Au Mixture", color="black", alpha=1, linestyle='dotted')
-    plt.title("Mixture of Au and Fe Spectra")
+    plt.plot(np.linspace(0, 20, 4096), au, label=r"Mixture of Au Spectral Lines", color="black", alpha=1)
+    plt.ylim(0, 1.5)
     plt.legend()
-    plt.xlabel("Energy (keV)")
     plt.ylabel("Intensity (a. u.)")
-    plt.savefig("data/plots/au_fe_mixture.svg", bbox_inches='tight', pad_inches=0.0)
+    plt.xlabel("Energy (keV)")
+    plt.title("Sample Spectrum of Gold (Au)")
+    plt.savefig("data/plots/au.svg", bbox_inches='tight', pad_inches=0.1)
 
-
-
-    spectrum = ArtificialTrainDataGenerator.generate_element_sample(
-        energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
-        element="au",
-        mu_global_err=0.05,
-        mu_local_err=0.05,
-        sigma=0.6,
-        use_cache=False)
-    plt.plot(np.linspace(0, 20, 4096), spectrum, label=r"Mixture of Au Lines", color="black")
+    # fe = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="fe",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
     
-    plt.title("Artificial Spectrum of Au")
-    plt.ylim(0, 1.5)
-    plt.xlabel("Energy (keV)")
-    plt.ylabel("Intensity (a. u.)")
-    plt.legend()
-    plt.savefig("data/plots/au.svg")
+    # plt.figure()
+    # au = au * 0.6
+    # fe = fe * 0.4
+    # res= au + fe
+    # # res /= np.max(res)
+    # plt.plot(np.linspace(0, 20, 4096), au, label=r"Au Spectrum", color="green", alpha=1)
+    # plt.plot(np.linspace(0, 20, 4096), fe, label=r"Fe Spectrum", color="red", alpha=1)
+    # plt.plot(np.linspace(0, 20, 4096), res, label=r"Fe-Au Mixture", color="black", alpha=1, linestyle='dotted')
+    # plt.title("Mixture of Au and Fe Spectra")
+    # plt.legend()
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.savefig("data/plots/au_fe_mixture.svg", bbox_inches='tight', pad_inches=0.0)
 
 
-    plt.figure()
-    x = ArtificialTrainDataGenerator.generate_element_sample(
 
-        energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
-        element="au",
-        mu_local_err=0.05,
-        mu_global_err=0.1,
-        sigma=0.6,
-        use_cache=False)
-    plt.figure()
-    window = ArtificialTrainDataGenerator.cumsum_window(x, left_max=0.8, right_min=0.2)
-    wood_spectrum = ArtificialTrainDataGenerator.WOOD_SPECTRUM * window
-
-    res = x * 0.6 + wood_spectrum * 0.4
-    plt.plot(np.linspace(0, 20, 4096), x * 0.6, label=r"Au Spectrum", color="blue")
-
-    plt.plot(np.linspace(0, 20, 4096), wood_spectrum * 0.4, label="Attenuated Background Spectrum", color="red")
-    plt.plot(np.linspace(0, 20, 4096), res, label="Au Spectrum Augmented with Background", color="black", linestyle="dotted")
-
-    plt.title("Spectrum of Au Augmented with Background")
-    plt.ylim(0, 1)
-    plt.xlabel("Energy (keV)")
-    plt.ylabel("Intensity (a. u.)")
-    plt.legend()
-    plt.savefig("data/plots/au_background.svg")
-
-    from FeatureEnhancer import FeatureEnhancer 
-    plt.figure()
-    plt.plot(np.linspace(0, 20, 4096), FeatureEnhancer.add_poisson_noise(res, scale=2), label="Au Spectrum Augmented with Poisson Noise", color="red")
+    # spectrum = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="au",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
+    # plt.plot(np.linspace(0, 20, 4096), spectrum, label=r"Mixture of Au Lines", color="black")
+    
+    # plt.title("Artificial Spectrum of Au")
+    # plt.ylim(0, 1.5)
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.legend()
+    # plt.savefig("data/plots/au.svg")
 
 
-    plt.plot(np.linspace(0, 20, 4096), res / np.max(res), label=r"Au Spectrum Augmented with Background", color="black")
-    plt.title("Spectrum of Au Augmented with Poisson Noise")
-    plt.ylim(0, 1.5)
-    plt.xlabel("Energy (keV)")
-    plt.ylabel("Intensity (a. u.)")
-    plt.legend()
-    plt.savefig("data/plots/au_poisson.svg")
+    # plt.figure()
+    # x = ArtificialTrainDataGenerator.generate_element_sample(
+
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="au",
+    #     mu_local_err=0.05,
+    #     mu_global_err=0.1,
+    #     sigma=0.6,
+    #     use_cache=False)
+    # plt.figure()
+    # window = ArtificialTrainDataGenerator.cumsum_window(x, left_max=0.8, right_min=0.2)
+    # wood_spectrum = ArtificialTrainDataGenerator.WOOD_SPECTRUM * window
+
+    # fig, axs = plt.subplots(1, 2, figsize=(12, 4))
+
+
+    # # --- First Subplot ---
+    # coeff = np.max(x * 0.6 + wood_spectrum * 0.4)
+    # axs[0].plot(np.linspace(0, 20, 4096), x * 0.6 / coeff, label=r"Au Spectrum", color="blue")
+    # axs[0].plot(np.linspace(0, 20, 4096), wood_spectrum * 0.4 / coeff, label="Attenuated Background Spectrum", color="red")
+    # res = x * 0.6 + wood_spectrum * 0.4
+    # axs[0].plot(np.linspace(0, 20, 4096), res / coeff, label="Au Spectrum Augmented with Background", color="black", linestyle="dotted")
+    # axs[0].set_title("Spectrum of Au Augmented with Background")
+    # axs[0].set_ylim(0, 1.3)
+    # axs[0].set_xlabel("Energy (keV)")
+    # axs[0].set_ylabel("Intensity (a. u.)")
+    # axs[0].legend()
+
+    # # --- Second Subplot ---
+    # axs[1].plot(np.linspace(0, 20, 4096), FeatureEnhancer.add_poisson_noise(res, scale=5), 
+    #             label="Au Spectrum Augmented with Poisson Noise", color="red")
+    # axs[1].plot(np.linspace(0, 20, 4096), res / np.max(res), 
+    #             label=r"Au Spectrum Augmented with Background", color="black")
+    # axs[1].set_title("Spectrum of Au Augmented with Poisson Noise")
+    # axs[1].set_ylim(0, 1.3)
+    # axs[1].set_xlabel("Energy (keV)")
+    # axs[1].set_ylabel("Intensity (a. u.)")
+    # axs[1].legend()
+
+
+    # plt.tight_layout()
+
+    # plt.savefig("data/plots/au_combined.svg")
+
+    # plt.figure(figsize=(10, 5))
+    # # e = np.linspace(0, 20, 4096)
+    # e = np.arange(4096)
+    # # plt.plot(e, wood_spectrum * 0.4 / coeff, label="Attenuated Background Spectrum", color="red", alpha=0.5)
+    # plt.fill_between(e, 0, wood_spectrum * 0.4 / coeff, color="red", alpha=0.3, label=f"Attenuated Background Spectrum Area = {np.sum(wood_spectrum * 0.4 / coeff):.2f}")
+    # # plt.plot(e, res / coeff, label=r"Au Spectrum", color="blue", alpha=0.5)
+    # plt.fill_between(e, wood_spectrum * 0.4 / coeff, res / coeff, color="blue", alpha=0.3, label=f"Au Spectrum Area = {np.sum(x * 0.6 / coeff):.2f}")
+    # plt.plot(e, res / coeff, label="Au Spectrum Augmented with Background", color="black")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.xlabel("Energy (a. u.)")
+    # plt.legend(loc="upper left")
+    # plt.savefig("data/plots/au_stacked.svg", bbox_inches='tight', pad_inches=0.1)
+
+    # from matplotlib.animation import FuncAnimation
+    # import numpy as np
+
+    # coeff = 1.0
+
+    # # Precompute spectra
+    # bg = wood_spectrum * 0.4 / coeff
+    # au_final = res / coeff
+    # au_only = au_final - bg  # Au contribution above background
+
+    # # Areas (consistent with static plot)
+    # bg_area = np.sum(bg)
+    # au_area = np.sum(au_final - bg)
+
+    # # Create figure
+    # fig, ax = plt.subplots(figsize=(10, 5))
+    # ax.set_ylabel("Intensity (a. u.)")
+    # ax.set_xlabel("Energy (a.u)")
+
+    # bg_label = f"Attenuated Background Spectrum Area"
+    # au_label = f"Au Spectrum Area"
+
+    # (line,) = ax.plot([], [], color="black",
+    #                 label="Au Spectrum Augmented with Background")
+    # bg_patch = ax.fill_between([], [], [], color="red", alpha=0.3, label=bg_label)
+    # au_patch = ax.fill_between([], [], [], color="blue", alpha=0.3, label=au_label)
+    # ax.legend(loc="upper left")
+
+    # # Remove placeholders
+    # bg_patch.remove()
+    # au_patch.remove()
+    # bg_patch = None
+    # au_patch = None
+
+    # def update(frame):
+    #     global bg_patch, au_patch
+    #     if bg_patch: bg_patch.remove()
+    #     if au_patch: au_patch.remove()
+
+    #     if frame < 50:  # Stage 1: pure Au only
+    #         bg_patch = ax.fill_between(e, 0, 0, color="red", alpha=0.3)
+    #         au_patch = ax.fill_between(e, 0, au_only, color="blue", alpha=0.3)
+    #         line.set_data([], [])
+    #     elif frame < 100:  # Stage 2: red grows in, blue morphs
+    #         frac = (frame - 50) / 50
+    #         bg_patch = ax.fill_between(e, 0, bg * frac, color="red", alpha=0.3)
+    #         blue_bottom = frac * bg
+    #         blue_top = (1 - frac) * au_only + frac * au_final
+    #         au_patch = ax.fill_between(e, blue_bottom, blue_top, color="blue", alpha=0.3)
+    #         line.set_data([], [])
+    #     else:  # Stage 3: final state
+    #         bg_patch = ax.fill_between(e, 0, bg, color="red", alpha=0.3)
+    #         au_patch = ax.fill_between(e, bg, au_final, color="blue", alpha=0.3)
+    #         line.set_data(e, au_final)
+
+    #     return [bg_patch, au_patch, line]
+
+    # ani = FuncAnimation(fig, update, frames=150, interval=50, blit=False)
+
+    # # Save as MP4 (requires ffmpeg)
+    # ani.save("data/plots/au_stacked_animation.mp4", writer="ffmpeg", dpi=300)
+
+
+
+
+
+
+    # ba = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="ba",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False
+    # )
+    # ti = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="ti",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
+    
+    # plt.figure(figsize=(12, 2))
+    # plt.plot(np.linspace(0, 20, 4096), ba, label=r"Ba Spectrum", color="blue")
+    # plt.plot(np.linspace(0, 20, 4096),ti, label=r"Ti Spectrum", color="orange")
+    # plt.title("Spectra of Ba and Ti")
+    # plt.ylim(0, 1.0)
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.legend()
+    # plt.savefig("data/plots/ba_ti.svg", bbox_inches='tight', pad_inches=0.1)
+
+    # plt.figure(figsize=(12, 2))
+
+    # ba = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="k",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False
+    # )
+    # ti = ArtificialTrainDataGenerator.generate_element_sample(
+    #     energy_range=np.linspace(0, 20, ArtificialTrainDataGenerator.CHANNELS),
+    #     element="cd",
+    #     mu_global_err=0.05,
+    #     mu_local_err=0.05,
+    #     sigma=0.6,
+    #     use_cache=False)
+    
+    # plt.plot(np.linspace(0, 20, 4096),ba, label=r"K Spectrum", color="blue")
+    # plt.plot(np.linspace(0, 20, 4096),ti, label=r"Cd Spectrum", color="orange")
+    # plt.title("Spectra of K and Cd")
+    # plt.ylim(0, 1.0)
+    # plt.xlabel("Energy (keV)")
+    # plt.ylabel("Intensity (a. u.)")
+    # plt.legend()
+    # plt.savefig("data/plots/k_cd.svg", bbox_inches='tight', pad_inches=0.1)
+
 
 
 
@@ -330,14 +493,38 @@ if __name__ == "__main__":
     #                     energy_range, b, mu_global_err=0.05, mu_local_err=0.05, sigma=0.6, use_cache=False
     #                 )
 
-    #                 result[i * grid_size + k, j * grid_size + m] = spec_a * (1 - alpha) + spec_b * alpha
-    #                 result[i * grid_size + k, j * grid_size + m] /= np.max(result[i * grid_size + k, j * grid_size + m])
+    #                 sample = spec_a * (1 - alpha) + spec_b * alpha
+    #                 sample /= np.max(sample)
+    #                 # result[i * grid_size + k, j * grid_size + m] = 
+    #                 # result[i * grid_size + k, j * grid_size + m] /= np.max(result[i * grid_size + k, j * grid_size + m])
 
-    #                 wood_ratio = np.random.uniform(0, 1, 1)[0]
-    #                 wood = wood_ratio * ArtificialTrainDataGenerator.WOOD_SPECTRUM
-    #                 result[i * grid_size + k, j * grid_size + m] = (1 - wood_ratio) * result[i * grid_size + k, j * grid_size + m] + wood
+    #                 wood_spectrum = ArtificialTrainDataGenerator.WOOD_SPECTRUM.copy()
+
+    #                 left_max = np.random.uniform(0.0, 1)
+    #                 right_min = np.random.uniform(0.0, left_max)
+    #                 cumsum_window = ArtificialTrainDataGenerator.cumsum_window(wood_spectrum, left_max=left_max, right_min=right_min)
+
+    #                 background_spectrum = wood_spectrum * cumsum_window
+
+                    
+    #                 background_ratio = np.random.uniform(0, 1)
+    #                 while True:
+    #                     attenuated_background_spectrum = background_spectrum * background_ratio 
+    #                     attenuated_sample = (1 - background_ratio) * sample
+    #                     final_sample = attenuated_sample + attenuated_background_spectrum
+
+    #                     division_coeff = np.max(final_sample)
+    #                     normalized_attenuated_background_spectrum = attenuated_background_spectrum / division_coeff
+    #                     if np.any(normalized_attenuated_background_spectrum > wood_spectrum): 
+    #                         background_ratio /= 2
+    #                         continue
+                        
+    #                     final_sample = final_sample / np.max(final_sample)
+    #                     break
+
+    #                 result[i * grid_size + k, j * grid_size + m] = sample
     
     # h, w, _ = result.shape
     # result = FeatureEnhancer.process_spectra(result.reshape((h * w, -1))).reshape(h, w, -1)
-
-    # np.save("data/objects/pigment_vs_pigment_noise_mh.npy", result)
+    
+    # np.save("data/objects/pigment_vs_pigment_noise.npy", result)

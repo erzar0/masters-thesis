@@ -6,3 +6,4 @@ data/
 .env/
 *.db
 wandb
+*.txt

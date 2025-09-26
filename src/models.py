@@ -5,6 +5,25 @@ if __name__ == '__main__':
 else:
     from .Elements import Elements
 
+class MLP(nn.Module):
+    def __init__(self, num_outputs=17):
+        super(MLP, self).__init__()
+        self.model = nn.Sequential(
+            nn.LazyLinear(2048),
+            nn.ReLU(),
+            nn.LazyLinear(1024),
+            nn.ReLU(),
+            nn.LazyLinear(512),
+            nn.ReLU(),
+            nn.LazyLinear(256),
+            nn.ReLU(),
+            nn.LazyLinear(num_outputs)
+        )
+    
+    def forward(self, x):
+        x.squeeze_(1)
+        return self.model(x)
+
 class TransformerMLP(nn.Module):
     def __init__(self, embed_dim, hidden_dim, dropout_rate):
         super(TransformerMLP, self).__init__()
@@ -513,9 +532,17 @@ def create_model(model_name: str, **kwargs):
 if __name__ == "__main__":
     for model_name in ['vit', 'lt_vit', 'cnn_vit', 'resnet1d', 'xrfnet']:
         model = create_model(model_name, num_outputs=17)
-        dummy = torch.tensor([1.0]*4096 * 64).reshape(64, 1, -1)
-        from torchviz import make_dot
-        make_dot(model(dummy), params=dict(list(model.named_parameters()))).render(model_name, format="png")
-        print(model(dummy)[0].shape)
+        
+        # Count total parameters
+        
+        # Create a dummy input
+        dummy = torch.ones(64, 1, 4096)  # batch_size=64, channels=1, seq_len=4096
+        model(dummy)
+        
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"{model_name} -> Total params: {total_params}, Trainable params: {trainable_params}")
+        
+        # Generate a visualization
 
 
